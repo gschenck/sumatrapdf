@@ -317,6 +317,9 @@ bool DisplayModel::PageVisible(int pageNo)
 /* Return true if a page is visible or a page in a row below or above is visible */
 bool DisplayModel::PageVisibleNearby(int pageNo)
 {
+    // render any page
+    return true;
+
     DisplayMode mode = GetDisplayMode();
     int columns = ColumnsFromDisplayMode(mode);
 
@@ -905,6 +908,11 @@ void DisplayModel::RenderVisibleParts()
     }
 
     if (gPredictiveRender) {
+        // prerender all pages
+        for (int pageNo = PageCount(); pageNo >= 1; --pageNo) {
+            dmCb->RequestRendering(pageNo);
+        }
+
         // prerender two more pages in facing and book view modes
         // if the rendering queue still has place for them
         if (!IsSingle(GetDisplayMode())) {

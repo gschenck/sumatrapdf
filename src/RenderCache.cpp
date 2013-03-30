@@ -9,7 +9,7 @@
 /* Define if you want to conserve memory by always freeing cached bitmaps
    for pages not visible. Disabling this might lead to pages not rendering
    due to insufficient (GDI) memory. */
-#define CONSERVE_MEMORY
+#undef CONSERVE_MEMORY
 
 // define to view the tile boundaries
 #undef SHOW_TILE_LAYOUT
@@ -341,10 +341,9 @@ void RenderCache::RequestRendering(DisplayModel *dm, int pageNo, TilePosition ti
                 /* Request with exactly the same parameters already queued for
                    rendering. Move it to the top of the queue so that it'll
                    be rendered faster. */
-                PageRenderRequest tmp;
-                tmp = requests[requestCount-1];
-                requests[requestCount-1] = *req;
-                *req = tmp;
+                PageRenderRequest tmp = requests[i];
+                memmove(&requests[i], &requests[i + 1], sizeof(requests[0]) * (requestCount - i - 1));
+                requests[requestCount-1] = tmp;
             } else {
                 /* There was a request queued for the same page but with different
                    zoom or rotation, so only replace this request */

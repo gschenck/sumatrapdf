@@ -66,11 +66,11 @@ struct PageRenderRequest {
     RenderingCallback * renderCb;
 };
 
-#define MAX_PAGE_REQUESTS 8
+#define MAX_PAGE_REQUESTS 1500
 
 // keep this value reasonably low, else we'll run
 // out of GDI memory when caching many larger bitmaps
-#define MAX_BITMAPS_CACHED 64
+#define MAX_BITMAPS_CACHED 1500
 
 class RenderCache
 {
