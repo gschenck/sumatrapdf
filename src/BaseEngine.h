@@ -215,9 +215,10 @@ public:
     virtual void Abort() = 0;
 };
 
+struct cJSON;
 class BaseEngine {
 public:
-    virtual ~BaseEngine() { }
+    virtual ~BaseEngine();
     // creates a clone of this engine (e.g. for printing on a different thread)
     virtual BaseEngine *Clone() = 0;
 
@@ -302,10 +303,10 @@ public:
     // caller must delete the result
     virtual PageDestination *GetNamedDest(const WCHAR *name) { return NULL; }
     // checks whether this document has an associated Table of Contents
-    virtual bool HasTocTree() const { return false; }
+    virtual bool HasTocTree() const; // { return false; }
     // returns the root element for the loaded document's Table of Contents
     // caller must delete the result (when no longer needed)
-    virtual DocTocItem *GetTocTree() { return NULL; }
+    virtual DocTocItem *GetTocTree(); // { return NULL; }
 
     // checks whether this document has explicit labels for pages (such as
     // roman numerals) instead of the default plain arabic numbering
@@ -326,6 +327,13 @@ public:
     // loads the given page so that the time required can be measured
     // without also measuring rendering times
     virtual bool BenchLoadPage(int pageNo) = 0;
+  protected:
+    BaseEngine();
+    BYTE md5digest[16];
+    cJSON* GetJSON() const;
+  private:
+    struct BaseData;
+    BaseData* data;
 };
 
 #endif
