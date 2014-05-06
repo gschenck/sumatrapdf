@@ -7,18 +7,20 @@
 #include "FileUtil.h"
 #include "Version.h"
 
+// #include "SumatraPDF.h" // MessageBoxWarning()
 #include "cJSON.h"  // Does extern "C".
 
 namespace {
     LPWSTR UserTocFilename(const BYTE digest[16]);
-    BOOL ReadTocFile(LPWSTR tocFilename, cJSON** pRoot);
-    BOOL WriteTocFile(LPWSTR tocFilename, cJSON *root);
+    BOOL ReadTocFile(LPWSTR tocFilename, cJSON** pRoot, BOOL bComplain);
+    BOOL WriteTocFile(LPWSTR tocFilename, cJSON *pRoot);
 }
 
 struct BaseEngine::BaseData {
-    BaseData() : json(NULL) {}
+    BaseData() : json(NULL), bDidMsg(FALSE) {}
     ~BaseData() { cJSON_Delete(json); }
     cJSON* json;
+    BOOL bDidMsg;
 };
 
 cJSON* BaseEngine::GetJSON() const
@@ -50,7 +52,9 @@ bool BaseEngine::HasTocTree() const
         ScopedMem<WCHAR> tocFilename(UserTocFilename(md5digest));
         
         if (tocFilename.Get()) {
-	    BOOL success = ReadTocFile(tocFilename, &data->json);
+	    BOOL complain = !data->bDidMsg;
+	    BOOL success = ReadTocFile(tocFilename, &data->json, complain);
+	    data->bDidMsg = TRUE;
 	}
     }
 
@@ -107,7 +111,7 @@ LPWSTR UserTocFilename(const BYTE digest[16])
 }
 
 
-BOOL ReadTocFile(LPWSTR tocFilename, cJSON** pRoot)
+BOOL ReadTocFile(LPWSTR tocFilename, cJSON** pRoot, BOOL bComplain)
 {
     BOOL bRet = TRUE;
     DWORD cbSize, cbSizeHi;
@@ -134,9 +138,29 @@ BOOL ReadTocFile(LPWSTR tocFilename, cJSON** pRoot)
 
     lpszContent = new CHAR[cbSize+1];
     bRet = ReadFile(hFile, lpszContent, cbSize, &cbRead, NULL);
-    if (bRet) {
-        lpszContent[cbSize] = '\0';
-        json = cJSON_Parse(lpszContent);
+    if (!bRet)
+	goto done;
+
+    lpszContent[cbSize] = '\0';
+    json = cJSON_Parse(lpszContent);
+    if (json == 0 && bComplain) {
+	// Parse error - give a hint.
+	const char *jsonErrorPtr = cJSON_GetErrorPtr();
+
+	if (jsonErrorPtr == 0) {
+	    const char lastGasp[] = "No error information from cJSON ...";
+	    jsonErrorPtr = lastGasp;
+	}
+
+	size_t len = wcslen(tocFilename) + 80U + 50U;
+        WCHAR* msg = new WCHAR[len];
+	wsprintf(msg, L"JSON parse error in file:\n\'%s\'\nAt:\n\"%.80S...\"",
+	    tocFilename, jsonErrorPtr);
+	WCHAR title[] = L"SumatraPDF - JSON Table of Content";
+	HWND hwnd = NULL; // No parent window.
+        UINT type =  MB_OK | MB_ICONEXCLAMATION;
+        MessageBox(hwnd, msg, title, type);
+	delete[] msg;
     }
 
 done:
