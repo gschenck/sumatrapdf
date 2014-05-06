@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
-	Version="9.00"
+	Version="9,00"
 	Name="sumatrapdf-vc2008"
 	ProjectGUID="{9458F693-A9CC-4786-B79A-A2103EC71FA3}"
 	RootNamespace="sumatrapdf"
@@ -47,7 +47,7 @@
 			<Tool
 				Name="VCNMakeTool"
 				BuildCommandLine="nmake -f ..\makefile.msvc BASEDIR=.. CFG=rel NASM=..\bin\nasm.exe all_sumatrapdf all"
-				ReBuildCommandLine="nmake -f makefile.msvc BASEDIR=.. CFG=rel NASM=..\bin\nasm.exe rebuild"
+				ReBuildCommandLine="nmake -f ..\makefile.msvc BASEDIR=.. CFG=rel NASM=..\bin\nasm.exe rebuild"
 				CleanCommandLine="del /s ..\obj-rel\*.obj"
 				Output="..\obj-rel\sumatrapdf.exe"
 				PreprocessorDefinitions="WIN32;UNICODE;_UNICODE;NDEBUG"
@@ -685,6 +685,10 @@
 				Name="Engines"
 				>
 				<File
+					RelativePath="..\src\BaseEngine.cpp"
+					>
+				</File>
+				<File
 					RelativePath="..\src\BaseEngine.h"
 					>
 				</File>
@@ -702,6 +706,14 @@
 				</File>
 				<File
 					RelativePath="..\src\ChmEngine.h"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cJSON.c"
+					>
+				</File>
+				<File
+					RelativePath="..\src\cJSON.h"
 					>
 				</File>
 				<File
@@ -2177,7 +2189,15 @@
 			</File>
 		</Filter>
 		<File
+			RelativePath="..\makefile.msvc"
+			>
+		</File>
+		<File
 			RelativePath="..\docs\releasenotes.txt"
+			>
+		</File>
+		<File
+			RelativePath="..\..\..\..\..\Dropbox\TODO_Sumatra.txt"
 			>
 		</File>
 	</Files>

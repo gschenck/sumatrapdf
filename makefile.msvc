@@ -186,7 +186,9 @@ EBOOK_OBJS = \
 	$(OS)\Doc.obj $(OS)\EbookDoc.obj $(OS)\MobiDoc.obj $(OU)\PalmDbReader.obj \
 	$(OS)\HtmlFormatter.obj $(OS)\EbookFormatter.obj
 
-ENGINE_OBJS = \
+# mh@tin-pot.net: class BaseEngine in no pure interface anymore.
+
+ENGINE_OBJS = $(OS)\BaseEngine.obj $(OS)\cJSON.obj \
 	$(OS)\PdfEngine.obj $(OS)\PsEngine.obj \
 	$(OS)\ImagesEngine.obj $(ZIP_OBJS) $(UNRAR_OBJS) \
 	$(OS)\DjVuEngine.obj $(DJVU_OBJS) \
@@ -228,11 +230,11 @@ UNINSTALLER_OBJS = \
 
 PDFFILTER_OBJS = \
 	$(ODLL)\PdfFilterDll.obj $(ODLL)\CPdfFilter.obj $(PDFFILTER_RES) \
-	$(UTILS_LIB) $(LIBMUPDF_LIB) $(OS)\MuPDF_Exports.obj $(OS)\PdfEngine.obj $(ZIP_OBJS)
+	$(UTILS_LIB) $(LIBMUPDF_LIB) $(OS)\MuPDF_Exports.obj $(OS)\BaseEngine.obj $(OS)\cJSON.obj $(OS)\PdfEngine.obj $(ZIP_OBJS)
 
 PDFPREVIEW_OBJS = \
 	$(ODLL)\PdfPreviewDll.obj $(ODLL)\PdfPreview.obj $(PDFPREVIEW_RES) \
-	$(UTILS_LIB) $(LIBMUPDF_LIB) $(OS)\MuPDF_Exports.obj $(OS)\PdfEngine.obj $(ZIP_OBJS)
+	$(UTILS_LIB) $(LIBMUPDF_LIB) $(OS)\MuPDF_Exports.obj $(OS)\BaseEngine.obj $(OS)\cJSON.obj $(OS)\PdfEngine.obj $(ZIP_OBJS)
 
 BROWSER_PLUGIN_OBJS = \
 	$(ODLL)\npPdfViewer.obj $(BROWSER_PLUGIN_RES) $(UTILS_LIB)
@@ -390,6 +392,9 @@ $(ENGINEDUMP_APP): $(ENGINEDUMP_OBJS)
 
 {$(SRCDIR)}.cpp{$(OS)}.obj::
 	$(CC) $(SUMATRA_CFLAGS) /Fo$(OS)\ /Fd$(O)\vc80.pdb $<
+
+{$(SRCDIR)}.c{$(OS)}.obj::
+	$(CC) $(SUMATRA_CFLAGS) /W1 /Fo$(OS)\ /Fd$(O)\vc80.pdb $<
 
 {$(SRCDIR)\browserplugin}.cpp{$(ODLL)}.obj::
 	$(CC) $(BROWSER_PLUGIN_CFLAGS) /Fo$(ODLL)\ /Fd$(O)\vc80.pdb $<
