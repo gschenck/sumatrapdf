@@ -13,35 +13,36 @@ While *SumatraPDF* uses PDF bookmarks quite nicely to let the user navigate
 the document (Menu _View_ | _Bookmarks_, or the `F12` key), not every PDF
 document has them.
 
-For example, the author recently bought the PDF version of ISO/IEC 14882:2011
-from the ANSI online store (this is the "C++11" Standard). This version - branded
-as an ANSI standard, but of course with identical content - does *not* have
-section bookmarks embedded in the PDF file. Obviously, navigating in a 1356-page
-tome without an outline is less than comfortable - and this licensed PDF file
-is also "protected", so I can't add and embed my own bookmarks ...
+For example, I recently bought the PDF version of ISO/IEC 14882:2011
+from the ANSI online store (this is the "C++11" Standard). This
+version - branded as an ANSI standard, but of course with identical
+content - does *not* have section bookmarks embedded in the PDF file.
+Obviously, navigating in a 1356-page tome without an outline is less
+than comfortable - and this licensed PDF file is also "protected", so I
+can't add and embed my own bookmarks ...
 
-While *SumatraPDF* allows to set "Favorites", ie pointers into documents, this
-is not quite what I wanted: Favorites have no hierarchical structure, and in
-my opinion the only "correct" solution would be to have *SumatraPDF* load the
-document's bookmarks from outside, but then handle them *exactly as if* they
-had been read from the PDF file in the first place.
+While *SumatraPDF* allows to set "Favorites", ie pointers into
+documents, this is not quite what I wanted: Favorites have no
+hierarchical structure, and in my opinion the only "correct" solution
+would be to have *SumatraPDF* load the document's bookmarks from
+outside, but then handle them *exactly as if* they had been read from
+the PDF file in the first place.
 
 I have now a modified *SumatraPDF* application which does exactly that:
 
-- If the PDF file has embedded bookmarks, these are used in the *SumatraPDF*
-  bookmarks pane.
+- If the PDF file has embedded bookmarks, these are used in the
+  *SumatraPDF* bookmarks pane.
 
-- Otherwise, if I have defined my own Table of Contents, this is used and 
-  displayed in the *SumatraPDF* bookmarks pane - with no noticeable difference
-  (except that user-defined bookmarks can only point to *pages*, not to
-  *locations* in page).
-
+- Otherwise, if I have defined my own Table of Contents, this is used
+  and displayed in the *SumatraPDF* bookmarks pane - with no noticeable
+  difference (except that user-defined bookmarks can only point to
+  *pages*, not to *locations* in page).
 
 
 How it Works
 ------------
 
-The concept is very easy:
+The concept is very simple:
 
  1. Store a user-defined "Table of Content" as a text file.
 
@@ -67,25 +68,27 @@ Implementation Notes
 
 Here is an overview of the modifications I have done:
 
- - I use [*cJSON*](http://sourceforge.net/projects/cjson/) to read JSON files:
-   this adds the files `cJSON.h` and `cJSON.c` to `src/`.
+ - I use [*cJSON*](http://sourceforge.net/projects/cjson/) to read JSON
+   files: this adds the files `cJSON.h` and `cJSON.c` to `src/`.
 
- - I modified `src/BaseEngine.h` to (1) keep the MD5 hash around (which is
-   computed anyway); and (2) provide derived classes with access to the
-   JSON object from the user-defined ToC file. 
+ - I modified `src/BaseEngine.h` to (1) keep the MD5 hash around (which
+   is computed anyway); and (2) provide derived classes with access to
+   the JSON object from the user-defined ToC file.
 
- - I added `src/BaseEngine,cpp`: This is where the user ToC file is searched and read.
-   The parsed result - a `cJSON` object pointer - is kept around for use in derived classes.
+ - I added `src/BaseEngine,cpp`: This is where the user ToC file is
+   searched and read. The parsed result - a `cJSON` object pointer - is
+   kept around for use in derived classes.
 
- - I modified `src/PdfEngine.cpp`: Where the `GetTocTree()` method of `PdfEngineImpl` did
-   only provide PDF-embedded data, it does now create a hierarchical `PdfDocItem` from
-   the user's ToC definition (as parsed and stored in a `cJSON` object).
-   Accordingly, the `PdfEngineImpl::HasTocTree() const` does (also) return `true`
-   if a user-defined ToC is available.
+ - I modified `src/PdfEngine.cpp`: Where the `GetTocTree()` method of
+   `PdfEngineImpl` did only provide PDF-embedded data, it does now
+   create a hierarchical `PdfDocItem` from the user's ToC definition
+   (as parsed and stored in a `cJSON` object). Accordingly, the
+   `PdfEngineImpl::HasTocTree() const` does (also) return `true` if a
+   user-defined ToC is available.
 
-Note that the settings file of *SumatraPDF* is completely oblivious of all this.
-Therefore, you can pass "ToC files" from one user/installation/machine to the
-next.
+Note that the settings file of *SumatraPDF* is completely oblivious
+of all this. Therefore, you can pass "ToC files" from one
+user/installation/machine to the next.
 
 
 How to Use
@@ -143,20 +146,21 @@ The syntax of a JSON "ToC file" should be obvious from this example.
 The `"name"` and `"md5"` items are not evaluated, but are there for the
 orientation of the human reader.
 
-The `"page1"` number specifies which PDF page corresponds to the page with
-the number "1" printed on it - in this case, the "proper" page 1 is on the
-17th PDF page (this is the number displayed in the *SumatraPDF* page number
-control). The `"pageno"` values are interpreted according to the following
-convention:
+The `"page1"` number specifies which PDF page corresponds to the page
+with the number "1" printed on it - in this case, the "proper" page 1 is
+on the 17th PDF page (this is the number displayed in the *SumatraPDF*
+page number control). The `"pageno"` values are interpreted according to
+the following convention:
 
  1. Non-negative `"pageno"` values are "proper" page numbers. They take
-    the `"page1"` value into account: A `"pageno"` value `1` means the 
+    the `"page1"` value into account: A `"pageno"` value `1` means the
     PDF page indicated by `"page1"`.
 
- 2. Negative `"pageno"` values directly indicate PDF pages: the `"pageno"`
-    value `-3` points to the 3rd PDF page, and `-11` to the 11th.
+ 2. Negative `"pageno"` values directly indicate PDF pages: the
+    `"pageno"` value `-3` points to the 3rd PDF page, and `-11` to the
+    11th.
 
-This convention allows to use the page numbers printed in the "Contents" 
+This convention allows to use the page numbers printed in the "Contents"
 section of a PDF document directly in the "ToC file".
 
 
@@ -168,21 +172,22 @@ for me ... ;-)
 
 Other nice-to-have features would be:
 
-- Reasonable handling and diagnostics of JSON parse errors (currently 
+- Reasonable handling and diagnostics of JSON parse errors (currently
   there is *none*) - this is the most important next step, IMO.
 
 - Instead of burying the "ToC files" in the user's `AppData` directory,
-  use a more flexible scheme (eg, store a map from MD5 hashes to "ToC file"
-  pathnames in the *SumatraPDF* settings file).
+  use a more flexible scheme (eg, store a map from MD5 hashes to "ToC
+  file" pathnames in the *SumatraPDF* settings file).
 
 - Provide (*Vim*? *Tcl*?) scripts to aid generating "ToC files" from
   "Contents" listings copy-pasted out of PDF documents.
 
 - Let the user choose whether to use the embedded PDF bookmarks or the
-  "ToC file" in case a PDF document has both (and remember this choice in
-  the file history).
+  "ToC file" in case a PDF document has both (and remember this choice
+  in the file history).
 
 - Expand the feature to other media types too, eg for `.xps`.
+
 
 Example
 -------
@@ -193,7 +198,8 @@ I have added a PDF file (without bookmarks) as an example:
 
 (This paper is freely available online:
 [`http://www.stroustrup.com/std96.pdf`](http://www.stroustrup.com/std96.pdf),
-therefore I assume Dr. Stroustrup would not object to my distributing it ...;-)
+therefore I assume Dr. Stroustrup would not object and sue me for
+distributing it here ... ;-)
 
 By opening the PDF file in *SumatraPDF* you can verify that there are no
 bookmarks available.
@@ -202,4 +208,9 @@ The file `1913b05bd76d645d93a3e161a4307a38.json` is the associated "ToC
 file": copy it into your `%USERPROFILE%\AppData\Roaming\SumatraPDF\`
 directory, and open the PDF with the modified `SumatraPDF.exe` program.
 You should be able to see the Table of Content bookmarks (hit `F12`).
+
+
+Have Fun!
+
+M. Hofmann <mh@tin-pot.net>
 
