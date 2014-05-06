@@ -1,0 +1,17 @@
+{
+  "name" : "Stroustrup: A Perspective on ISO C++",
+  "md5"  : "1913b05bd76d645d93a3e161a4307a38",
+  "page1" : 1,
+  "items" : [
+    { "header" : "1 Introduction", "pageno" : 1 },
+    { "header" : "2 The Language", "pageno" : 1, "items" : [
+	{ "header" : "2.1 Coherence", "pageno" : 2 },
+	{ "header" : "2.2 An Example", "pageno" : 2 }
+    ] },
+    { "header" : "3 The Library", "pageno" : 5 },
+    { "header" : "4 The Standards Process", "pageno" : 6 },
+    { "header" : "5 Challenges", "pageno" : 7 },
+    { "header" : "6 Acknowledgements", "pageno" : 7 },
+    { "header" : "7 References", "pageno" : 7 }
+  ]
+}

@@ -184,4 +184,22 @@ Other nice-to-have features would be:
 
 - Expand the feature to other media types too, eg for `.xps`.
 
+Example
+-------
+
+I have added a PDF file (without bookmarks) as an example:
+
+`Stroustrup---A_Perspective_on_ISO_C++.pdf`
+
+(This paper is freely available online:
+[`http://www.stroustrup.com/std96.pdf`](http://www.stroustrup.com/std96.pdf),
+therefore I assume Dr. Stroustrup would not object to my distributing it ...;-)
+
+By opening the PDF file in *SumatraPDF* you can verify that there are no
+bookmarks available.
+
+The file `1913b05bd76d645d93a3e161a4307a38.json` is the associated "ToC
+file": copy it into your `%USERPROFILE%\AppData\Roaming\SumatraPDF\`
+directory, and open the PDF with the modified `SumatraPDF.exe` program.
+You should be able to see the Table of Content bookmarks (hit `F12`).
 
