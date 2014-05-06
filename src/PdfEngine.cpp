@@ -6,6 +6,7 @@
 
 extern "C" {
 #include <mupdf/fitz.h>
+#include <cJSON.h>
 }
 
 #include "BaseUtil.h"
@@ -1222,7 +1223,8 @@ public:
 
     virtual PageDestination *GetNamedDest(const WCHAR *name);
     virtual bool HasTocTree() const {
-        return outline != NULL || attachments != NULL;
+        return BaseEngine::HasTocTree() ||
+                outline != NULL || attachments != NULL;
     }
     virtual DocTocItem *GetTocTree();
 
@@ -1615,15 +1617,16 @@ bool PdfEngineImpl::LoadFromStream(fz_stream *stm, PasswordUI *pwdUI)
         return false;
     }
 
+    unsigned char digest[16 + 32] = { 0 };
+    fz_stream_fingerprint(_doc->file, digest);
+    memcpy(md5digest, digest, sizeof md5digest);
+
     isProtected = pdf_needs_password(_doc);
     if (!isProtected)
         return true;
 
     if (!pwdUI)
         return false;
-
-    unsigned char digest[16 + 32] = { 0 };
-    fz_stream_fingerprint(_doc->file, digest);
 
     bool ok = false, saveKey = false;
     while (!ok) {
@@ -1783,6 +1786,104 @@ PdfTocItem *PdfEngineImpl::BuildTocTree(fz_outline *entry, int& idCounter)
     return node;
 }
 
+namespace {
+
+PdfEngineImpl* theEngine = 0;
+int thePage1 = 1;
+
+PdfTocItem* MakeItem(const char* title, int pageNo)
+{
+    fz_link_dest* fzptr = new fz_link_dest;
+    const int fzflags = fz_link_flag_fit_h;
+
+
+    WCHAR *name = pdf_clean_string(str::conv::FromUtf8(title));
+
+    fzptr->kind = FZ_LINK_GOTO;
+    fzptr->ld.gotor.page = pageNo;
+    fzptr->ld.gotor.dest = 0;           // Always NULL => Current doc.
+    fzptr->ld.gotor.flags = fzflags;
+    fzptr->ld.gotor.lt.x = 1.0f;        // x0 > x1 => Infinite rect.
+    fzptr->ld.gotor.lt.y = 1.0f;
+    fzptr->ld.gotor.rb.x = 0.0f;
+    fzptr->ld.gotor.rb.y = 0.0f;
+    fzptr->ld.gotor.file_spec = 0;      // Always NULL.
+    fzptr->ld.gotor.new_window = FALSE;
+
+    assert(theEngine);
+    PdfLink link(theEngine, fzptr, fz_empty_rect, pageNo);
+    return new PdfTocItem(name, link);
+}
+
+PdfTocItem* MakeToc(cJSON* items)
+{
+    PdfTocItem* first = 0;
+    const int nItem = cJSON_GetArraySize(items);
+
+    for (int i = 0; i < nItem; ++i) {
+        cJSON* itemObj = cJSON_GetArrayItem(items, i);
+        cJSON* headerObj = cJSON_GetObjectItem(itemObj, "header");
+        cJSON* pageNoObj = cJSON_GetObjectItem(itemObj, "pageno");
+        cJSON* subItemsObj = cJSON_GetObjectItem(itemObj, "items");
+
+        assert(itemObj != 0 && itemObj->type == cJSON_Object);
+        assert(headerObj != 0 && headerObj->type == cJSON_String);
+        assert(pageNoObj != 0 && pageNoObj->type == cJSON_Number);
+        assert(subItemsObj == 0 || subItemsObj->type == cJSON_Array);
+
+        const char* title = headerObj->valuestring;
+        int pageNo = pageNoObj->valueint;
+
+        // Zero-based page index.
+	if (pageNo < 0) {
+	    // Convert to absolute zero-based page no.
+	    pageNo = -pageNo - 1;
+	} else {
+	    // Convert to relative zero-based page no.
+	    pageNo = (thePage1 - 1) + (pageNo - 1);
+	}
+	// Fix up, just in case.
+	if (pageNo < 0) {
+	    pageNo = 0;	
+	}
+
+        PdfTocItem* pdfItem = MakeItem(title, pageNo);
+        if (subItemsObj != 0 && cJSON_GetArraySize(subItemsObj) > 0) {
+            PdfTocItem* subItems = MakeToc(subItemsObj);
+            assert(subItems != 0);
+            pdfItem->child = subItems;
+        }
+        if (first == 0) {
+            first = pdfItem;
+        } else {
+            first->AddSibling(pdfItem);
+        }
+    }
+    return first;   
+}
+
+PdfTocItem* BuildUserTocTree(PdfEngineImpl* engine, cJSON* json)
+{
+    cJSON* page1Obj = cJSON_GetObjectItem(json, "page1");
+    cJSON* itemsObj = cJSON_GetObjectItem(json, "items");
+
+    if (itemsObj == 0) {
+        return 0;
+    }
+
+    theEngine = engine;
+
+    if (page1Obj != 0 && page1Obj->type == cJSON_Number) {
+	thePage1 = page1Obj->valueint;
+    } else {
+        thePage1  = 1;
+    }
+
+    return MakeToc(itemsObj);
+}
+
+} // namespace
+
 DocTocItem *PdfEngineImpl::GetTocTree()
 {
     PdfTocItem *node = NULL;
@@ -1792,8 +1893,11 @@ DocTocItem *PdfEngineImpl::GetTocTree()
         node = BuildTocTree(outline, idCounter);
         if (attachments)
             node->AddSibling(BuildTocTree(attachments, idCounter));
-    } else if (attachments)
+    } else if (attachments) {
         node = BuildTocTree(attachments, idCounter);
+    } else if (BaseEngine::HasTocTree()) {
+        node = BuildUserTocTree(this, GetJSON());
+    }
 
     return node;
 }
