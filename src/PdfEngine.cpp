@@ -1855,7 +1855,7 @@ PdfTocItem* MakeToc(cJSON* items)
             pageIdx = 0;	
         }
 
-        PdfTocItem* pdfItem = MakeItem(title, pageNo);
+        PdfTocItem* pdfItem = MakeItem(title, pageIdx);
         assert(pdfItem != 0);	// Should only fail with `bad_alloc` ...
 
         if (subItemsObj != 0 && cJSON_GetArraySize(subItemsObj) > 0) {
