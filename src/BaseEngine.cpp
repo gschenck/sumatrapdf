@@ -7,20 +7,19 @@
 #include "FileUtil.h"
 #include "Version.h"
 
-// #include "SumatraPDF.h" // MessageBoxWarning()
 #include "cJSON.h"  // Does extern "C".
 
 namespace {
-    LPWSTR UserTocFilename(const BYTE digest[16]);
-    BOOL ReadTocFile(LPWSTR tocFilename, cJSON** pRoot, BOOL bComplain);
-    BOOL WriteTocFile(LPWSTR tocFilename, cJSON *pRoot);
+    LPWSTR UserTocFileName(const BYTE digest[16]);
+    BOOL ReadTocFile(LPWSTR tocFileName, cJSON** rootPtr, BOOL doComplain);
+    BOOL WriteTocFile(LPWSTR tocFileName, cJSON *root);
 }
 
 struct BaseEngine::BaseData {
-    BaseData() : json(NULL), bDidMsg(FALSE) {}
+    BaseData() : json(NULL), didMessage(FALSE) {}
     ~BaseData() { cJSON_Delete(json); }
     cJSON* json;
-    BOOL bDidMsg;
+    BOOL didMessage;
 };
 
 cJSON* BaseEngine::GetJSON() const
@@ -49,13 +48,13 @@ bool BaseEngine::HasTocTree() const
         }
 
         // Get ToC pathname from MD5 hash of doc content.
-        ScopedMem<WCHAR> tocFilename(UserTocFilename(md5digest));
-        
-        if (tocFilename.Get()) {
-	    BOOL complain = !data->bDidMsg;
-	    BOOL success = ReadTocFile(tocFilename, &data->json, complain);
-	    data->bDidMsg = TRUE;
-	}
+        ScopedMem<WCHAR> tocFileName(UserTocFileName(md5digest));
+
+        if (tocFileName.Get()) {
+            BOOL complain = !data->didMessage;
+            BOOL success = ReadTocFile(tocFileName, &data->json, complain);
+            data->didMessage = TRUE;
+        }
     }
 
     return data->json != NULL;
@@ -69,7 +68,7 @@ DocTocItem *BaseEngine::GetTocTree()
 
 namespace {
 
-LPWSTR GenTocFilename(LPWSTR fileName)
+LPWSTR GenTocFileName(LPWSTR fileName)
 {
     ScopedMem<WCHAR> path;
     /* Use %APPDATA% */
@@ -86,7 +85,7 @@ LPWSTR GenTocFilename(LPWSTR fileName)
     return path::Join(path, fileName);
 }
 
-LPWSTR UserTocFilename(const BYTE digest[16])
+LPWSTR UserTocFileName(const BYTE digest[16])
 {
     ScopedMem<CHAR> fingerPrint(str::MemToHex(digest, 16));
 
@@ -96,85 +95,85 @@ LPWSTR UserTocFilename(const BYTE digest[16])
     sprintf_s(fileName, size, "%s%s", fingerPrint.Get(), ".json");
 
     INT res = MultiByteToWideChar(
-	CP_UTF8,
-	MB_ERR_INVALID_CHARS,
-	fileName,
-	-1,
-	wFileName,
-	(int)size);
+        CP_UTF8,
+        MB_ERR_INVALID_CHARS,
+        fileName,
+        -1,
+        wFileName,
+        (int)size);
 
     if (res == 0) { // Failure.
-	return NULL;
+        return NULL;
     } else {
-        return GenTocFilename(wFileName.StealData());
+        return GenTocFileName(wFileName.StealData());
     }
 }
 
 
-BOOL ReadTocFile(LPWSTR tocFilename, cJSON** pRoot, BOOL bComplain)
+BOOL ReadTocFile(LPWSTR tocFileName, cJSON** rootPtr, BOOL doComplain)
 {
-    BOOL bRet = TRUE;
-    DWORD cbSize, cbSizeHi;
-    DWORD cbRead;
-    const DWORD cbSizeMax = 1U << 20;
-    HANDLE hFile = INVALID_HANDLE_VALUE;
-    CHAR *lpszContent = NULL;
-    cJSON *json = NULL;
+    cJSON* json = 0;
 
-    hFile = CreateFile(tocFilename,
-	FILE_READ_DATA, 
-	FILE_SHARE_READ,
-	NULL,
-	OPEN_EXISTING,
-	FILE_FLAG_SEQUENTIAL_SCAN,
-	NULL);
+    HANDLE hFile = CreateFile(tocFileName,
+        FILE_READ_DATA, 
+        FILE_SHARE_READ,
+        NULL,
+        OPEN_EXISTING,
+        FILE_FLAG_SEQUENTIAL_SCAN,
+        NULL);
 
     if (hFile == INVALID_HANDLE_VALUE)
-	goto done;
-
-    cbSize = GetFileSize(hFile, &cbSizeHi);
-    if (cbSizeHi > 0 || cbSize == 0 || cbSize > cbSizeMax)
         goto done;
 
-    lpszContent = new CHAR[cbSize+1];
-    bRet = ReadFile(hFile, lpszContent, cbSize, &cbRead, NULL);
-    if (!bRet)
-	goto done;
+    const DWORD cbSizeMax = 1U << 20;
+    DWORD cbSizeHi;
+    const DWORD cbSize = GetFileSize(hFile, &cbSizeHi);
+    if (cbSizeHi > 0 || cbSize == 0 || cbSize > cbSizeMax) {
+        goto done;
+    } else {
+        ScopedMem<CHAR> lpszContent(new CHAR[cbSize+1]);
+        DWORD cbRead;
+        BOOL bRet = ReadFile(hFile, lpszContent, cbSize, &cbRead, NULL);
+        if (!bRet)
+            goto done;
 
-    lpszContent[cbSize] = '\0';
-    json = cJSON_Parse(lpszContent);
-    if (json == 0 && bComplain) {
-	// Parse error - give a hint.
-	const char *jsonErrorPtr = cJSON_GetErrorPtr();
+        lpszContent[cbSize] = '\0';
+        json = cJSON_Parse(lpszContent);
 
-	if (jsonErrorPtr == 0) {
-	    static const char lastGasp[] = "No error information from cJSON ...";
-	    jsonErrorPtr = lastGasp;
-	}
+        if (json == 0 && doComplain) {
+            // Parse error - get and give a hint.
+            const char *jsonErrorPtr = cJSON_GetErrorPtr();
 
-	size_t len = wcslen(tocFilename) + 80U + 50U;
-        WCHAR* msg = new WCHAR[len];
-	wsprintf(msg, L"JSON parse error in file:\n\'%s\'\nAt:\n\"%.80S...\"",
-	    tocFilename, jsonErrorPtr);
-	WCHAR title[] = L"SumatraPDF - JSON Table of Content";
-	HWND hwnd = NULL; // No parent window.
-        UINT type =  MB_OK | MB_ICONEXCLAMATION;
-        MessageBox(hwnd, msg, title, type);
-	delete[] msg;
+            if (jsonErrorPtr == 0) {
+                static const char lastGasp[] = "No error information from cJSON ...";
+                jsonErrorPtr = lastGasp;
+            }
+
+            // Set up a message box.
+            const size_t len = wcslen(tocFileName) + 80U + 50U;
+            ScopedMem<WCHAR> msg(new WCHAR[len]);
+            wsprintf(msg.Get(),
+                L"JSON parse error in file:\n\'%s\'\nAt:\n\"%.80S...\"",
+                tocFileName, jsonErrorPtr);
+            const WCHAR title[] = L"SumatraPDF - JSON Table of Content";
+            const HWND hwnd = NULL; // No parent window.
+            const UINT type =  MB_OK | MB_ICONEXCLAMATION;
+
+            MessageBox(hwnd, msg, title, type);
+        }
     }
 
 done:
-    if (lpszContent != NULL) delete[] lpszContent;
-    if (hFile != INVALID_HANDLE_VALUE) CloseHandle(hFile);
-    *pRoot = json;
+    if (hFile != INVALID_HANDLE_VALUE)
+        CloseHandle(hFile);
+    *rootPtr = json;
     return json != NULL;
 }
 
 
-BOOL WriteTocFile(LPWSTR tocFilename, cJSON *root)
+BOOL WriteTocFile(LPWSTR tocFileName, cJSON *root)
 {
-    BOOL success = FALSE;
-    return success;
+    return FALSE; // Not implemented.
 }
 
 } // namespace

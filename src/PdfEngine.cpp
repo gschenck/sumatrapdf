@@ -6,8 +6,8 @@
 
 extern "C" {
 #include <mupdf/fitz.h>
-#include <cJSON.h>
 }
+#include <cJSON.h> // Does extern "C" on its own.
 
 #include "BaseUtil.h"
 #include "PdfEngine.h"
@@ -1788,19 +1788,17 @@ PdfTocItem *PdfEngineImpl::BuildTocTree(fz_outline *entry, int& idCounter)
 
 namespace {
 
-PdfEngineImpl* theEngine = 0;
-int thePage1 = 1;
+PdfEngineImpl* gEngine = 0;
+int gPage1 = 1;
 
-PdfTocItem* MakeItem(const char* title, int pageNo)
+PdfTocItem* MakeItem(const char* title, int pageIdx)
 {
     fz_link_dest* fzptr = new fz_link_dest;
     const int fzflags = fz_link_flag_fit_h;
-
-
     WCHAR *name = pdf_clean_string(str::conv::FromUtf8(title));
 
     fzptr->kind = FZ_LINK_GOTO;
-    fzptr->ld.gotor.page = pageNo;
+    fzptr->ld.gotor.page = pageIdx;     // Zero-based PDF page index.
     fzptr->ld.gotor.dest = 0;           // Always NULL => Current doc.
     fzptr->ld.gotor.flags = fzflags;
     fzptr->ld.gotor.lt.x = 1.0f;        // x0 > x1 => Infinite rect.
@@ -1810,8 +1808,8 @@ PdfTocItem* MakeItem(const char* title, int pageNo)
     fzptr->ld.gotor.file_spec = 0;      // Always NULL.
     fzptr->ld.gotor.new_window = FALSE;
 
-    assert(theEngine);
-    PdfLink link(theEngine, fzptr, fz_empty_rect, pageNo);
+    assert(gEngine);
+    PdfLink link(gEngine, fzptr, fz_empty_rect, pageIdx);
     return new PdfTocItem(name, link);
 }
 
@@ -1821,33 +1819,45 @@ PdfTocItem* MakeToc(cJSON* items)
     const int nItem = cJSON_GetArraySize(items);
 
     for (int i = 0; i < nItem; ++i) {
-        cJSON* itemObj = cJSON_GetArrayItem(items, i);
-        cJSON* headerObj = cJSON_GetObjectItem(itemObj, "header");
-        cJSON* pageNoObj = cJSON_GetObjectItem(itemObj, "pageno");
-        cJSON* subItemsObj = cJSON_GetObjectItem(itemObj, "items");
-
+        cJSON* itemObj     = cJSON_GetArrayItem(items, i);
         assert(itemObj != 0 && itemObj->type == cJSON_Object);
+        if (itemObj == 0 || itemObj->type != cJSON_Object)
+            goto fail;
+
+        cJSON* headerObj   = cJSON_GetObjectItem(itemObj, "header");
         assert(headerObj != 0 && headerObj->type == cJSON_String);
+        if (headerObj == 0 || headerObj->type != cJSON_String)
+            goto fail;
+
+        cJSON* pageNoObj   = cJSON_GetObjectItem(itemObj, "pageno");
         assert(pageNoObj != 0 && pageNoObj->type == cJSON_Number);
+        if (pageNoObj == 0 || pageNoObj->type != cJSON_Number)
+            goto fail;
+
+        cJSON* subItemsObj = cJSON_GetObjectItem(itemObj, "items");
         assert(subItemsObj == 0 || subItemsObj->type == cJSON_Array);
+        if (subItemsObj != 0 && subItemsObj->type != cJSON_Array)
+            goto fail;
 
         const char* title = headerObj->valuestring;
         int pageNo = pageNoObj->valueint;
+        int pageIdx;			// Zero-based PDF page index.
 
-        // Zero-based page index.
-	if (pageNo < 0) {
-	    // Convert to absolute zero-based page no.
-	    pageNo = -pageNo - 1;
-	} else {
-	    // Convert to relative zero-based page no.
-	    pageNo = (thePage1 - 1) + (pageNo - 1);
-	}
-	// Fix up, just in case.
-	if (pageNo < 0) {
-	    pageNo = 0;	
-	}
+        if (pageNo < 0) {
+            // Convert from "page 1"-relative page number (note the minus!).
+            pageIdx = (-pageNo) - 1;
+        } else {
+            // Convert from absolute document page number.
+            pageIdx = (gPage1 - 1) + (pageNo - 1);
+        }
+        // Fix up, just in case.
+        if (pageIdx < 0) {
+            pageIdx = 0;	
+        }
 
         PdfTocItem* pdfItem = MakeItem(title, pageNo);
+        assert(pdfItem != 0);	// Should only fail with `bad_alloc` ...
+
         if (subItemsObj != 0 && cJSON_GetArraySize(subItemsObj) > 0) {
             PdfTocItem* subItems = MakeToc(subItemsObj);
             assert(subItems != 0);
@@ -1860,6 +1870,10 @@ PdfTocItem* MakeToc(cJSON* items)
         }
     }
     return first;   
+
+fail:
+    delete first;	// Also deletes siblings and children ...
+    return 0;
 }
 
 PdfTocItem* BuildUserTocTree(PdfEngineImpl* engine, cJSON* json)
@@ -1871,12 +1885,12 @@ PdfTocItem* BuildUserTocTree(PdfEngineImpl* engine, cJSON* json)
         return 0;
     }
 
-    theEngine = engine;
+    gEngine = engine;
 
     if (page1Obj != 0 && page1Obj->type == cJSON_Number) {
-	thePage1 = page1Obj->valueint;
+        gPage1 = page1Obj->valueint;
     } else {
-        thePage1  = 1;
+        gPage1  = 1;
     }
 
     return MakeToc(itemsObj);
@@ -1889,14 +1903,14 @@ DocTocItem *PdfEngineImpl::GetTocTree()
     PdfTocItem *node = NULL;
     int idCounter = 0;
 
-    if (outline) {
+    if (BaseEngine::HasTocTree()) {
+        node = BuildUserTocTree(this, GetJSON());
+    } else if (outline) {
         node = BuildTocTree(outline, idCounter);
         if (attachments)
             node->AddSibling(BuildTocTree(attachments, idCounter));
     } else if (attachments) {
         node = BuildTocTree(attachments, idCounter);
-    } else if (BaseEngine::HasTocTree()) {
-        node = BuildUserTocTree(this, GetJSON());
     }
 
     return node;
