@@ -148,7 +148,7 @@ BOOL ReadTocFile(LPWSTR tocFilename, cJSON** pRoot, BOOL bComplain)
 	const char *jsonErrorPtr = cJSON_GetErrorPtr();
 
 	if (jsonErrorPtr == 0) {
-	    const char lastGasp[] = "No error information from cJSON ...";
+	    static const char lastGasp[] = "No error information from cJSON ...";
 	    jsonErrorPtr = lastGasp;
 	}
 
