@@ -14,8 +14,8 @@ the document (Menu _View_ | _Bookmarks_, or the `F12` key), not every PDF
 document has them.
 
 For example, the author recently bought the PDF version of ISO/IEC 14882:2011
-from the ANSI online store (this is the "C++11" Standard). This version (branded
-as an ANSI standard, but of course with identical content) does *not* have
+from the ANSI online store (this is the "C++11" Standard). This version - branded
+as an ANSI standard, but of course with identical content - does *not* have
 section bookmarks embedded in the PDF file. Obviously, navigating in a 1356-page
 tome without an outline is less than comfortable - and this licensed PDF file
 is also "protected", so I can't add and embed my own bookmarks ...
@@ -58,7 +58,7 @@ folder where *SumatraPDF*'s settings file is stored (that is, in
 Furthermore, the "ToC file" for a PDF document is found by using (the
 hexadecimal representation of) its MD5 hash value as a file name. As a
 consequence, the ToC is bound to the document's *content*, and you can
-rename, duplicate, move the PDF fiel around at will - the ToC will still
+rename, duplicate, move the PDF file around at will - the ToC will still
 be associated with the document.
 
 
@@ -102,7 +102,7 @@ is some cleanup to do, but this is a fairly regular (expression ;-)
 search-and-replace job.
 
 The "ToC file" for the C++11 Standard, stored as
-`641fdec2c42285a3c4ecc754a03d7676.json" in my
+`641fdec2c42285a3c4ecc754a03d7676.json` in my
 `AppData\Roaming\SumatraPDF\` directory, has about 360 bookmark entries;
 it took me about 15 minutes to generate it. It looks like this:
 
