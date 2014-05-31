@@ -47,6 +47,15 @@
 #include <uxtheme.h>
 #include "propertyGrid.h"
 
+#ifdef _UNICODE
+#define _t(x) w##x
+#else
+#define _t(x) x
+#endif
+
+#define _tmemmove _t(memmove)
+#define _tmemset _t(memset)
+
 #define ID_LISTBOX 2000   ///<An Id for the Listbox
 #define ID_LISTMAP 2001   ///<An Id for the Listmap
 #define ID_PROPDESC 2002  ///<An Id for the Property description
@@ -238,6 +247,27 @@ typedef struct tagINSTANCEDATA {
     LONG nDivLft;           ///< Vertical Divider positon limit
     LONG nDivRht;           ///< Vertical Divider positon limit
 } INSTANCEDATA , *LPINSTANCEDATA;
+
+#define ToolBar_AutoSize(hwnd) \
+    (void)SendMessage((hwnd), TB_AUTOSIZE, 0, 0L)
+
+#define ToolBar_GetItemRect(hwnd, idButton, lprc) \
+    (BOOL)SendMessage((hwnd), TB_GETITEMRECT, (WPARAM)idButton, (LPARAM)(LPRECT)lprc)
+
+#define ToolBar_GetToolTips(hwnd) \
+    (HWND)SendMessage((hwnd), TB_GETTOOLTIPS, 0, 0L)
+
+#define ToolBar_ButtonStructSize(hwnd) \
+    (void)SendMessage((hwnd), TB_BUTTONSTRUCTSIZE, (WPARAM)sizeof(TBBUTTON), 0L)
+
+#define ToolBar_AddBitmap(hwnd, nButtons, lptbab) \
+    (int)SendMessage((hwnd), TB_ADDBITMAP, (WPARAM)nButtons, (LPARAM)(LPTBADDBITMAP) lptbab)
+
+#define ToolBar_AddString(hwnd, hinst, idString) \
+    (int)SendMessage((hwnd), TB_ADDSTRING, (WPARAM)(HINSTANCE)hinst, (LPARAM)idString)
+
+#define ToolTip_AddTool(hwnd, lpti) \
+    (BOOL)SendMessage((hwnd), TTM_ADDTOOL, 0, (LPARAM) (LPTOOLINFO) lpti)
 
 static LPINSTANCEDATA g_lpInst; ///< instance data (this) pointer
 
@@ -993,7 +1023,9 @@ static LRESULT CALLBACK IpEdit_Proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             TCHAR buf[MAX_PATH];
             if (4 == SNDMSG(hIpEdit, IPM_GETADDRESS, 0, (LPARAM) & *((LPDWORD)ip)))
             {
-                _stprintf(buf, MAX_PATH, _T("%d.%d.%d.%d"), ip[3], ip[2], ip[1], ip[0]);
+                _stprintf(buf
+                    //, MAX_PATH
+                    , _T("%d.%d.%d.%d"), ip[3], ip[2], ip[1], ip[0]);
                 AllocatedString_Replace(g_lpInst->lpCurrent->lpszCurValue, buf);
             }
         }
@@ -1738,7 +1770,9 @@ static LPTSTR LogFontItem_ToString(LPPROPGRIDFONTITEM lpLogFontItem)
     _tmemset(buf, (TCHAR)0, MAX_PATH);
 
 
-    _stprintf(buf, MAX_PATH,
+    _stprintf(buf
+        //, MAX_PATH
+        ,
 #ifdef _UNICODE
         _T( "Height: %d\r\n")
         _T(    "Width: %d\r\n")
@@ -1863,7 +1897,9 @@ static LPTSTR FileDialogItem_ToString(LPPROPGRIDFDITEM lpPgFdItem)
         *ps++ = _T('\t');
     }
 
-    _stprintf(szBuf, NELEMS(szBuf),
+    _stprintf(szBuf
+        //, NELEMS(szBuf)
+        ,
 #ifdef _UNICODE
         _T( "Title: %ls\r\n" )
         _T(    "Path: %ls\r\n" )
@@ -1896,9 +1932,15 @@ static LPITEMIDLIST ConvertPathToLpItemIdList(LPTSTR pszPath)
 
     if (SUCCEEDED(SHGetDesktopFolder(&pDesktopFolder)))
     {
-        pDesktopFolder->lpVtbl->ParseDisplayName(pDesktopFolder,
-         NULL, NULL, pszPath, &chEaten, &pidl, &dwAttributes);
-        pDesktopFolder->lpVtbl->Release(pDesktopFolder);
+/*        pDesktopFolder->ParseDisplayName(
+            pDesktopFolder,
+            NULL, 
+            pszPath, 
+            &chEaten, 
+            &pidl, 
+            &dwAttributes);
+        pDesktopFolder->Release();
+        */
     }
     return pidl;
 }
@@ -1971,8 +2013,8 @@ static LPTSTR BrowseFolder(HWND hwnd, LPTSTR curPath, LPTSTR title, LPTSTR rootP
             _tmemset(szDir, (TCHAR)0, MAX_PATH);
 
         // free memory used
-        pMalloc->lpVtbl->Free(pMalloc, pidl);
-        pMalloc->lpVtbl->Release(pMalloc);
+        pMalloc->Free(pMalloc);
+        pMalloc->Release();
     }
     return szDir;
 }
@@ -2393,7 +2435,7 @@ static VOID ListBox_OnMouseMove(HWND hwnd, INT x, INT y, UINT keyFlags)
         tiToolInfo.cbSize = sizeof(TOOLINFO);
 
         //Populate TOOLINFO with the info for the tool (including old text)
-        ToolTip_EnumTools(g_lpInst->hwndToolTip, 0, &tiToolInfo);
+       // ToolTip_EnumTools(g_lpInst->hwndToolTip, 0, &tiToolInfo);
 
         if ((x >= g_lpInst->iHDivider + 5) && !g_lpInst->fTracking)
         {
@@ -2418,7 +2460,9 @@ static VOID ListBox_OnMouseMove(HWND hwnd, INT x, INT y, UINT keyFlags)
                         szFmt = _T("%s %d");
 #endif
                         //Replace the text in the buf and update the tool
-                        _stprintf(newText, NELEMS(buf), szFmt, pgfi.logFont.lfFaceName, PointSize);
+                        _stprintf(newText
+                            //, NELEMS(buf)
+                            , szFmt, pgfi.logFont.lfFaceName, PointSize);
                     }
                         break;
                     case PIT_CHECK: //Skip this item
@@ -2436,7 +2480,7 @@ static VOID ListBox_OnMouseMove(HWND hwnd, INT x, INT y, UINT keyFlags)
             _tmemset(buf, (TCHAR)0, NELEMS(buf)-1);
             //Replace the text in the buf and update the tool
             _tcsncpy(buf, newText, NELEMS(buf) - 1);
-            ToolTip_UpdateTipText(g_lpInst->hwndToolTip, &tiToolInfo);
+            //ToolTip_UpdateTipText(g_lpInst->hwndToolTip, &tiToolInfo);
         }
     }
 }
@@ -2826,7 +2870,9 @@ static VOID ListBox_OnCommand(HWND hwnd, INT id, HWND hwndCtl, UINT codeNotify)
                 if (ChooseColor(&cc))
                 {
                     TCHAR buf[MAX_PATH];
-                    _stprintf(buf, MAX_PATH, _T("%d,%d,%d"), GetRValue(cc.rgbResult), GetGValue(cc.rgbResult), GetBValue(cc.rgbResult));
+                    _stprintf(buf
+                        //, MAX_PATH
+                        , _T("%d,%d,%d"), GetRValue(cc.rgbResult), GetGValue(cc.rgbResult), GetBValue(cc.rgbResult));
 
                     AllocatedString_Replace(g_lpInst->lpCurrent->lpszCurValue, buf);
                 }
@@ -3002,7 +3048,7 @@ static VOID Grid_OnSize(HWND hwnd, UINT state, INT cx, INT cy)
         ti.hwnd = g_lpInst->hwndListBox;
         ti.uId = 0;
         GetClientRect(hwnd, &ti.rect);
-        ToolTip_NewToolRect(g_lpInst->hwndToolTip, &ti);
+        //ToolTip_NewToolRect(g_lpInst->hwndToolTip, &ti);
     }
     if (NULL != g_lpInst->lpCurrent)
     {
@@ -3071,7 +3117,7 @@ static VOID Grid_OnLButtonDown(HWND hwnd, BOOL fDoubleClick, INT x, INT y, UINT 
         g_lpInst->nOldDivY = y;
 
         HDC hdc = GetDC(hwnd);
-        HPEN hOld = SelectObject(hdc, CreatePen(PS_SOLID, 3, 0));
+        HPEN hOld = (HPEN)SelectObject(hdc, CreatePen(PS_SOLID, 3, 0));
 
         InvertLine(hdc, g_lpInst->nDivLft, g_lpInst->nOldDivY,
             g_lpInst->nDivRht, g_lpInst->nOldDivY);
@@ -3107,7 +3153,7 @@ static VOID Grid_OnLButtonUp(HWND hwnd, INT x, INT y, UINT keyFlags)
         g_lpInst->nOldDivY = y;
 
         HDC hdc = GetDC(hwnd);
-        HPEN hOld = SelectObject(hdc, CreatePen(PS_SOLID, 3, 0));
+        HPEN hOld = (HPEN)SelectObject(hdc, CreatePen(PS_SOLID, 3, 0));
 
         InvertLine(hdc, g_lpInst->nDivLft, g_lpInst->nOldDivY,
             g_lpInst->nDivRht, g_lpInst->nOldDivY);
@@ -3194,8 +3240,15 @@ static HBRUSH Grid_OnCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, INT type
         GetClientRect(hwnd, &rc);
 
         HDC hdc = GetDC(hwnd);
-        FillSolidRect(hdc,MAKE_PRECT(0, g_lpInst->iVDivider - 2,
-            WIDTH(rc), g_lpInst->iVDivider),GetSysColor(COLOR_BTNFACE));
+        RECT dRect = {(0), 
+                    (g_lpInst->iVDivider - 2), 
+                    (WIDTH(rc)), 
+                    (g_lpInst->iVDivider) 
+                };
+        FillSolidRect(hdc
+            ,( &dRect )
+            //,MAKE_PRECT(0, g_lpInst->iVDivider - 2, WIDTH(rc), g_lpInst->iVDivider)
+            ,GetSysColor(COLOR_BTNFACE));
         ReleaseDC(hwnd,hdc);
     } 
     return FORWARD_WM_CTLCOLORSTATIC(hwnd, hdc, hwndChild, DefWindowProc);
@@ -3404,7 +3457,7 @@ static VOID Grid_OnDrawItem(HWND hwnd, const DRAWITEMSTRUCT *lpDIS)
         rect2.bottom = rect2.top + 9;
 
         FillRect(lpDIS->hDC, &rect2, GetSysColorBrush(COLOR_WINDOW));
-        FrameRect(lpDIS->hDC, &rect2, GetStockObject(BLACK_BRUSH));
+        FrameRect(lpDIS->hDC, &rect2, (HBRUSH)GetStockObject(BLACK_BRUSH));
 
         POINT ptCtr;
         ptCtr.x = (LONG) (rect2.left + (WIDTH(rect2) * 0.5));
@@ -3436,9 +3489,10 @@ static VOID Grid_OnDrawItem(HWND hwnd, const DRAWITEMSTRUCT *lpDIS)
         //Write the property name (bold font, Visual Studio style)
         oldFont = (HFONT)SelectObject(lpDIS->hDC, Font_SetBold(lpDIS->hwndItem, TRUE));
         SetTextColor(lpDIS->hDC, GetSysColor(COLOR_BTNTEXT));
+        RECT dRect = {rectCatPart1.left + 6, rectCatPart1.top + 3,
+            rectCatPart1.right - 6, rectCatPart1.bottom + 3};
         DrawText(lpDIS->hDC, pItem->lpszCatalog, _tcslen(pItem->lpszCatalog),
-            MAKE_PRECT(rectCatPart1.left + 6, rectCatPart1.top + 3,
-            rectCatPart1.right - 6, rectCatPart1.bottom + 3),
+            &dRect,
             DT_NOCLIP | DT_LEFT | DT_SINGLELINE);
     }
     else
@@ -3454,9 +3508,12 @@ static VOID Grid_OnDrawItem(HWND hwnd, const DRAWITEMSTRUCT *lpDIS)
         SetTextColor(lpDIS->hDC,
             GetSysColor(nIndex == (UINT)ListBox_GetCurSel(lpDIS->hwndItem) ?
             (g_lpInst->fGotFocus ? COLOR_HIGHLIGHTTEXT : COLOR_BTNTEXT) : COLOR_WINDOWTEXT));
-        DrawText(lpDIS->hDC, pItem->lpszPropName, _tcslen(pItem->lpszPropName),
-            MAKE_PRECT(rectPart1.left + 3, rectPart1.top + 3, rectPart1.right - 3,
-            rectPart1.bottom + 3), DT_NOCLIP | DT_LEFT | DT_SINGLELINE);
+        RECT dRect = {rectPart1.left + 3, rectPart1.top + 3, rectPart1.right - 3, rectPart1.bottom + 3};
+        DrawText(lpDIS->hDC
+            , pItem->lpszPropName
+            , _tcslen(pItem->lpszPropName)
+            , &dRect
+            , DT_NOCLIP | DT_LEFT | DT_SINGLELINE);
 
         DrawBorder(lpDIS->hDC, &rectPart1, BF_TOPRIGHT,
             GetSysColor(COLOR_BTNFACE));
@@ -3479,7 +3536,7 @@ static VOID Grid_OnDrawItem(HWND hwnd, const DRAWITEMSTRUCT *lpDIS)
         if (PIT_COLOR == pItem->iItemType)
         {
             FillSolidRect(lpDIS->hDC, &rect3, GetColor(pItem->lpszCurValue));
-            FrameRect(lpDIS->hDC, &rect3, GetStockObject(BLACK_BRUSH));
+            FrameRect(lpDIS->hDC, &rect3, (HBRUSH)GetStockObject(BLACK_BRUSH));
         }
         else if (PIT_CHECK == pItem->iItemType)
         {
@@ -3529,7 +3586,7 @@ static VOID Grid_OnDrawItem(HWND hwnd, const DRAWITEMSTRUCT *lpDIS)
                     pgfi.logFont.lfHeight = tm.tmHeight + 2; //So displayed text is not oversized
 
                 hf = CreateFontIndirect(&pgfi.logFont);
-                hfOld = SelectObject(lpDIS->hDC, hf);
+                hfOld = (HFONT)SelectObject(lpDIS->hDC, hf);
 
                 SetTextColor(lpDIS->hDC, pgfi.crFont);
 #ifdef _UNICODE
@@ -3537,10 +3594,13 @@ static VOID Grid_OnDrawItem(HWND hwnd, const DRAWITEMSTRUCT *lpDIS)
 #else
                 szFmt = _T("%s %d");
 #endif
-                _stprintf(buf, MAX_PATH, szFmt, pgfi.logFont.lfFaceName, PointSize);
+                _stprintf(buf
+                    //, MAX_PATH
+                    , szFmt, pgfi.logFont.lfFaceName, PointSize);
+                RECT dRect = {rectPart3.left + 3, rectPart3.top + 3,
+                    rectPart3.right + 3, rectPart3.bottom + 3};
                 DrawText(lpDIS->hDC, buf, _tcslen(buf),
-                    MAKE_PRECT(rectPart3.left + 3, rectPart3.top + 3,
-                    rectPart3.right + 3, rectPart3.bottom + 3),
+                    &dRect,
                     DT_NOCLIP | DT_LEFT | DT_SINGLELINE);
 
                 DeleteObject(SelectObject(lpDIS->hDC, hfOld));
@@ -3549,9 +3609,10 @@ static VOID Grid_OnDrawItem(HWND hwnd, const DRAWITEMSTRUCT *lpDIS)
         else
         {
             SetTextColor(lpDIS->hDC, GetSysColor(COLOR_WINDOWTEXT));
+            RECT dRect = {rectPart3.left + 3, rectPart3.top + 3,
+                rectPart3.right + 3, rectPart3.bottom + 3 };
             DrawText(lpDIS->hDC, pItem->lpszCurValue, _tcslen(pItem->lpszCurValue),
-                MAKE_PRECT(rectPart3.left + 3, rectPart3.top + 3,
-                rectPart3.right + 3, rectPart3.bottom + 3),
+                &dRect,
                 DT_NOCLIP | DT_LEFT | DT_SINGLELINE);
         }
     }
@@ -3615,7 +3676,9 @@ static INT Grid_OnAddString(LPPROPGRIDITEM pgi)
             lpszCurValue = (LPTSTR)pgi->lpCurValue;
             break;
         case PIT_COLOR:
-            _stprintf(buf, MAX_PATH, _T("%d,%d,%d"),
+            _stprintf(buf
+				//, MAX_PATH
+				, _T("%d,%d,%d"),
                 GetRValue((COLORREF)pgi->lpCurValue),
                 GetGValue((COLORREF)pgi->lpCurValue),
                 GetBValue((COLORREF)pgi->lpCurValue));
@@ -3632,8 +3695,9 @@ static INT Grid_OnAddString(LPPROPGRIDITEM pgi)
             lpszCurValue = ((LPPROPGRIDFDITEM)pgi->lpCurValue)->lpszFilePath;
             break;
         case PIT_IP:
-            _stprintf(buf, MAX_PATH,
-                _T("%d.%d.%d.%d"),
+            _stprintf(buf
+                //, MAX_PATH
+                , _T("%d.%d.%d.%d"),
                 FIRST_IPADDRESS((DWORD)pgi->lpCurValue),
                 SECOND_IPADDRESS((DWORD)pgi->lpCurValue),
                 THIRD_IPADDRESS((DWORD)pgi->lpCurValue),
@@ -3919,7 +3983,9 @@ static LRESULT Grid_OnSetItemData(INT iItem, LPPROPGRIDITEM pgi)
                 lpszCurValue = (LPTSTR)pgi->lpCurValue;
                 break;
             case PIT_COLOR:
-                _stprintf(buf, MAX_PATH, _T("%d,%d,%d"),
+                _stprintf(buf
+                    //, MAX_PATH
+                    , _T("%d,%d,%d"),
                     GetRValue((COLORREF)pgi->lpCurValue),
                     GetGValue((COLORREF)pgi->lpCurValue),
                     GetBValue((COLORREF)pgi->lpCurValue));
@@ -3936,7 +4002,9 @@ static LRESULT Grid_OnSetItemData(INT iItem, LPPROPGRIDITEM pgi)
                 lpszCurValue = ((LPPROPGRIDFDITEM)pgi->lpCurValue)->lpszFilePath;
                 break;
             case PIT_IP:
-                _stprintf(buf, MAX_PATH, _T("%d.%d.%d.%d"),
+                _stprintf(buf
+                    //, MAX_PATH
+                    , _T("%d.%d.%d.%d"),
                     FIRST_IPADDRESS((DWORD)pgi->lpCurValue),
                     SECOND_IPADDRESS((DWORD)pgi->lpCurValue),
                     THIRD_IPADDRESS((DWORD)pgi->lpCurValue),
@@ -4309,7 +4377,7 @@ static LRESULT CALLBACK Grid_Proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
                         ti.hwnd = g_lpInst->hwndListBox;
                         ti.uId = 0;
                         GetClientRect(hwnd, &ti.rect);
-                        ToolTip_NewToolRect(g_lpInst->hwndToolTip, &ti);
+                        //ToolTip_NewToolRect(g_lpInst->hwndToolTip, &ti);
 
                         ShowWindow(g_lpInst->hwndToolTip, SW_SHOW);
                     }

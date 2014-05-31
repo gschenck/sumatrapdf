@@ -114,11 +114,13 @@ static BOOL Main_OnNotify(HWND hwnd, INT id, LPNMHDR pnm)
     if(IDC_PG == id)
     {
         LPNMPROPGRID lpnmp = (LPNMPROPGRID)pnm;
-		LPPROPGRIDITEM Item = PropGrid_GetItemData(pnm->hwndFrom, lpnmp->iIndex);
+        LPPROPGRIDITEM Item = PropGrid_GetItemData(pnm->hwndFrom, lpnmp->iIndex);
         switch(lpnmp->iIndex)
         {
             case 0:
-                _stprintf(gDemoData.strProp1, NELEMS(gDemoData.strProp1),
+                _stprintf(gDemoData.strProp1
+                //, NELEMS(gDemoData.strProp1)
+                ,
 //#ifdef _UNICODE
                     _T("%ls"),
 //#else
@@ -127,7 +129,9 @@ static BOOL Main_OnNotify(HWND hwnd, INT id, LPNMHDR pnm)
                     (LPTSTR)Item->lpCurValue);
                 break;
             case 1:
-                _stprintf(gDemoData.strProp2, NELEMS(gDemoData.strProp2),
+                _stprintf(gDemoData.strProp2
+                    //, NELEMS(gDemoData.strProp2)
+                    ,
 #ifdef _UNICODE
                     _T("%ls"),
 #else
@@ -137,7 +141,9 @@ static BOOL Main_OnNotify(HWND hwnd, INT id, LPNMHDR pnm)
                 break;
             case 2:
             {
-                _stprintf(gDemoData.strProp3, NELEMS(gDemoData.strProp3),
+                _stprintf(gDemoData.strProp3
+                    //, NELEMS(gDemoData.strProp3)
+                    ,
 #ifdef _UNICODE
                     _T("%ls"),
 #else
@@ -215,12 +221,14 @@ static BOOL Main_OnNotify(HWND hwnd, INT id, LPNMHDR pnm)
             }
                 break;
             case 14:
-                _stprintf(gDemoData.strProp8, NELEMS(gDemoData.strProp8),
-                    ((LPPROPGRIDFDITEM)Item->lpCurValue)->lpszFilePath);
+                _stprintf(gDemoData.strProp8
+                    //, NELEMS(gDemoData.strProp8)
+                    , ((LPPROPGRIDFDITEM)Item->lpCurValue)->lpszFilePath);
                 break;
             case 15:
-                _stprintf(gDemoData.strProp9, NELEMS(gDemoData.strProp9),
-                    (LPTSTR)Item->lpCurValue);
+                _stprintf(gDemoData.strProp9
+                    //, NELEMS(gDemoData.strProp9)
+                    , (LPTSTR)Item->lpCurValue);
                 break;
             case 16:
                 gDemoData.dwProp10 = (DWORD)Item->lpCurValue;
@@ -247,7 +255,9 @@ static BOOL Main_OnNotify(HWND hwnd, INT id, LPNMHDR pnm)
         if(3 < lpnmp->iIndex && lpnmp->iIndex < 12)
         {
             TCHAR buf[MAX_PATH];
-            _stprintf(buf, MAX_PATH, _T("Check Boxes: %#lx = %s"),
+            _stprintf(buf
+                //, MAX_PATH
+                , _T("Check Boxes: %#lx = %s"),
                 gDemoData.bProp5,byte_to_binary(gDemoData.bProp5));
             Static_SetText(GetDlgItem(hwnd, IDC_LBL),buf);
         }
@@ -266,7 +276,9 @@ BOOL Main_OnInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
     TCHAR buf[MAX_PATH];
 
     // Initialize DemoData
-    _stprintf(gDemoData.strProp1, NELEMS(gDemoData.strProp1),_T("Property Grid demo"));
+    _stprintf(gDemoData.strProp1
+        //, NELEMS(gDemoData.strProp1)
+        ,_T("Property Grid demo"));
     
     _tmemset(gDemoData.strProp2,_T('\0'),NELEMS(gDemoData.strProp2));
     _tmemmove(gDemoData.sczzChoices, _T("Item1\0Item2\0Item3\0Item4\0Item5\0"), NELEMS(gDemoData.sczzChoices));
@@ -277,21 +289,29 @@ BOOL Main_OnInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
     gDemoData.szzChoices = (LPTSTR) malloc(gDemoData.dwChoicesCount * sizeof(TCHAR));
     _tmemmove(gDemoData.szzChoices, szzChoices, gDemoData.dwChoicesCount);
 
-    _stprintf(gDemoData.strProp4, NELEMS(gDemoData.strProp4),_T("Static, no edit"));
+    _stprintf(gDemoData.strProp4
+        //, NELEMS(gDemoData.strProp4)
+        ,_T("Static, no edit"));
     gDemoData.bProp5 = 0xff;
     gDemoData.crProp6 = RGB(128,64,64);
     GetObject((HFONT)GetStockObject(DEFAULT_GUI_FONT),
         sizeof(LOGFONT), &gDemoData.lfProp7);
     gDemoData.crProp7 = RGB(0,0,255);
-    _stprintf(gDemoData.strProp8, NELEMS(gDemoData.strProp8),_T("C:\\test.txt"));
-    _stprintf(gDemoData.strProp9, NELEMS(gDemoData.strProp9),_T("C:\\"));
+    _stprintf(gDemoData.strProp8
+        //, NELEMS(gDemoData.strProp8)
+        ,_T("C:\\test.txt"));
+    _stprintf(gDemoData.strProp9
+        //, NELEMS(gDemoData.strProp9)
+        ,_T("C:\\"));
     gDemoData.dwProp10 = MAKEIPADDRESS(127,0,0,1);
     GetLocalTime(&gDemoData.stProp11); 
     GetLocalTime(&gDemoData.stProp12);  
     GetLocalTime(&gDemoData.stProp13);
 
 
-    _stprintf(buf, MAX_PATH, _T("Check Boxes: %#lx = %s"),
+    _stprintf(buf
+        //, MAX_PATH
+        , _T("Check Boxes: %#lx = %s"),
         gDemoData.bProp5,byte_to_binary(gDemoData.bProp5));
     Static_SetText(GetDlgItem(hwnd, IDC_LBL),buf);
  
