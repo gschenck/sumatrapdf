@@ -1003,6 +1003,7 @@ static bool LoadDocIntoWindow(LoadArgs& args, PasswordUI *pwdUI, DisplayState *s
             // tell UI Automation about content change
             if (win->uia_provider)
                 win->uia_provider->OnDocumentLoad(dm);
+            win->ctrl->SetFullScreenMode(win->isFullScreen);
         }
         else if (win->AsChm()) {
             win->ctrl->SetDisplayMode(displayMode);
@@ -3185,6 +3186,8 @@ static void EnterFullScreen(WindowInfo& win, bool presentation)
 
     if (presentation)
         win.ctrl->SetPresentationMode(true);
+    else if (win.ctrl != NULL)
+        win.ctrl->SetFullScreenMode(true);
 
     // Make sure that no toolbar/sidebar keeps the focus
     SetFocus(win.hwndFrame);
@@ -3201,8 +3204,12 @@ static void ExitFullScreen(WindowInfo& win)
         win.ctrl->SetPresentationMode(false);
         win.presentation = PM_DISABLED;
     }
-    else
+    else if (!wasPresentation){
         win.isFullScreen = false;
+        if (win.ctrl != NULL){
+            win.ctrl->SetFullScreenMode(false);
+        }
+    }
 
     if (wasPresentation) {
         KillTimer(win.hwndCanvas, HIDE_CURSOR_TIMER_ID);

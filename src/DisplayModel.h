@@ -84,6 +84,7 @@ public:
     virtual void SetDisplayMode(DisplayMode mode, bool keepContinuous=true);
     virtual DisplayMode GetDisplayMode() const { return displayMode; }
     virtual void SetPresentationMode(bool enable);
+    virtual void SetFullScreenMode(bool enable);
     virtual void SetZoomVirtual(float zoom, PointI *fixPt=NULL) { ZoomTo(zoom, fixPt); }
     virtual float GetZoomVirtual() const { return zoomVirtual; }
     virtual float GetNextZoomStep(float towards) const;
@@ -192,6 +193,7 @@ public:
     bool            dontRenderFlag;
 
     bool            GetPresentationMode() const { return presentationMode; }
+    bool            GetFullScreenMode() const { return fullScreenMode; }
 
 protected:
 
@@ -209,6 +211,7 @@ protected:
     void            GoToPage(int pageNo, int scrollY, bool addNavPt=false, int scrollX=-1);
     bool            GoToPrevPage(int scrollY);
     int             GetPageNextToPoint(PointI pt);
+    void            ReturnToStandardView();
 
     BaseEngine *    _engine;
 
@@ -250,6 +253,7 @@ protected:
     bool            presentationMode;
     float           presZoomVirtual;
     DisplayMode     presDisplayMode;
+    bool            fullScreenMode;
 
     Vec<ScrollState>navHistory;
     /* index of the "current" history entry (to be updated on navigation),

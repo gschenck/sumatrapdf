@@ -38,6 +38,7 @@ public:
     virtual void SetDisplayMode(DisplayMode mode, bool keepContinuous=false);
     virtual DisplayMode GetDisplayMode() const { return IsDoublePage() ? DM_FACING : DM_SINGLE_PAGE; }
     virtual void SetPresentationMode(bool enable) { /* not supported */ }
+    virtual void SetFullScreenMode(bool enable) { /* not supported */ }
     virtual void SetZoomVirtual(float zoom, PointI *fixPt=NULL) { /* not supported */ }
     virtual float GetZoomVirtual() const { return 100; }
     virtual float GetNextZoomStep(float towards) const { return 100; }

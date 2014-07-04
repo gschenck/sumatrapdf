@@ -17,6 +17,8 @@ void ControllerCallbackHandler::UpdateScrollbars(SizeI canvas)
 
     SizeI viewPort = dm->GetViewPort().Size();
 
+	bool scrollBarsEnabled = !win->isFullScreen || gGlobalPrefs->fixedPageUI.showScrollBarsInFullScreen;
+
     if (viewPort.dx >= canvas.dx) {
         si.nPos = 0;
         si.nMin = 0;
@@ -28,7 +30,7 @@ void ControllerCallbackHandler::UpdateScrollbars(SizeI canvas)
         si.nMax = canvas.dx - 1;
         si.nPage = viewPort.dx;
     }
-    ShowScrollBar(win->hwndCanvas, SB_HORZ, viewPort.dx < canvas.dx);
+    ShowScrollBar(win->hwndCanvas, SB_HORZ, viewPort.dx < canvas.dx && scrollBarsEnabled);
     SetScrollInfo(win->hwndCanvas, SB_HORZ, &si, TRUE);
 
     if (viewPort.dy >= canvas.dy) {
@@ -48,7 +50,7 @@ void ControllerCallbackHandler::UpdateScrollbars(SizeI canvas)
             si.nMax -= viewPort.dy - si.nPage;
         }
     }
-    ShowScrollBar(win->hwndCanvas, SB_VERT, viewPort.dy < canvas.dy);
+    ShowScrollBar(win->hwndCanvas, SB_VERT, viewPort.dy < canvas.dy && scrollBarsEnabled);
     SetScrollInfo(win->hwndCanvas, SB_VERT, &si, TRUE);
 }
 

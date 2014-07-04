@@ -148,7 +148,7 @@ DisplayModel::DisplayModel(BaseEngine *engine, EngineType type, ControllerCallba
     zoomReal(INVALID_ZOOM), zoomVirtual(INVALID_ZOOM),
     rotation(0), dpiFactor(1.0f), displayR2L(false),
     presentationMode(false), presZoomVirtual(INVALID_ZOOM),
-    presDisplayMode(DM_AUTOMATIC), navHistoryIx(0),
+	presDisplayMode(DM_AUTOMATIC), fullScreenMode(false), navHistoryIx(0),
     dontRenderFlag(false)
 {
     CrashIf(!_engine || _engine->PageCount() <= 0);
@@ -478,6 +478,7 @@ void DisplayModel::Relayout(float newZoomVirtual, int newRotation)
     bool needHScroll = false;
     bool needVScroll = false;
     viewPort = RectI(viewPort.TL(), totalViewPortSize);
+	bool scrollBarsEnabled = !fullScreenMode || gGlobalPrefs->fixedPageUI.showScrollBarsInFullScreen;
 
 RestartLayout:
     int currPosY = windowMargin.top;
@@ -512,7 +513,7 @@ RestartLayout:
         pos.y = currPosY;
 
         // restart the layout if we detect we need to show scrollbars
-        if (!needVScroll && viewPort.dy < currPosY + rowMaxPageDy) {
+		if (!needVScroll && scrollBarsEnabled && viewPort.dy < currPosY + rowMaxPageDy) {
             needVScroll = true;
             viewPort.dx -= GetSystemMetrics(SM_CXVSCROLL);
             goto RestartLayout;
@@ -524,7 +525,7 @@ RestartLayout:
         if (columnMaxWidth[pageInARow] < pos.dx)
             columnMaxWidth[pageInARow] = pos.dx;
 
-        if (!needHScroll && viewPort.dx < windowMargin.left + columnMaxWidth[0] + (columns == 2 ? pageSpacing.dx + columnMaxWidth[1] : 0) + windowMargin.right) {
+		if (!needHScroll && scrollBarsEnabled && viewPort.dx < windowMargin.left + columnMaxWidth[0] + (columns == 2 ? pageSpacing.dx + columnMaxWidth[1] : 0) + windowMargin.right) {
             needHScroll = true;
             viewPort.dy -= GetSystemMetrics(SM_CYHSCROLL);
             goto RestartLayout;
@@ -549,7 +550,7 @@ RestartLayout:
     // restart the layout if we detect we need to show scrollbars
     // (there are some edge cases we can't catch in the above loop)
     const int canvasDy = currPosY + windowMargin.bottom - pageSpacing.dy;
-    if (!needVScroll && canvasDy > viewPort.dy) {
+	if (!needVScroll && scrollBarsEnabled && canvasDy > viewPort.dy) {
         needVScroll = true;
         viewPort.dx -= GetSystemMetrics(SM_CXVSCROLL);
         goto RestartLayout;
@@ -566,7 +567,7 @@ RestartLayout:
     // restart the layout if we detect we need to show scrollbars
     // (there are some edge cases we can't catch in the above loop)
     int canvasDx = windowMargin.left + columnMaxWidth[0] + (columns == 2 ? pageSpacing.dx + columnMaxWidth[1] : 0) + windowMargin.right;
-    if (!needHScroll && canvasDx > viewPort.dx) {
+	if (!needHScroll && canvasDx > viewPort.dx && scrollBarsEnabled) {
         needHScroll = true;
         viewPort.dy -= GetSystemMetrics(SM_CYHSCROLL);
         goto RestartLayout;
@@ -1034,19 +1035,38 @@ void DisplayModel::SetPresentationMode(bool enable)
         ZoomTo(ZOOM_FIT_PAGE);
     }
     else {
-        if (_engine && _engine->IsImageCollection())
-            windowMargin = gGlobalPrefs->comicBookUI.windowMargin;
-        else
-            windowMargin = gGlobalPrefs->fixedPageUI.windowMargin;
-#ifdef DRAW_PAGE_SHADOWS
-        windowMargin.top += 3; windowMargin.bottom += 5;
-        windowMargin.right += 3; windowMargin.left += 1;
-#endif
+        ReturnToStandardView();
         SetDisplayMode(presDisplayMode);
         if (!IsValidZoom(presZoomVirtual))
             presZoomVirtual = zoomVirtual;
         ZoomTo(presZoomVirtual);
     }
+}
+
+void DisplayModel::SetFullScreenMode(bool enable)
+{
+    fullScreenMode = enable;
+    if (enable && !gGlobalPrefs->fixedPageUI.showScrollBarsInFullScreen){
+        windowMargin.top = windowMargin.right = windowMargin.bottom = windowMargin.left = 0;
+        ZoomTo(zoomVirtual);
+    }
+    else if (!enable) {
+        ReturnToStandardView();
+    }
+}
+
+void DisplayModel::ReturnToStandardView()
+{
+    if (_engine && _engine->IsImageCollection()){
+        windowMargin = gGlobalPrefs->comicBookUI.windowMargin;
+    }
+    else {
+        windowMargin = gGlobalPrefs->fixedPageUI.windowMargin;
+    }
+#ifdef DRAW_PAGE_SHADOWS
+    windowMargin.top += 3; windowMargin.bottom += 5;
+    windowMargin.right += 3; windowMargin.left += 1;
+#endif
 }
 
 /* In continuous mode just scrolls to the next page. In single page mode
