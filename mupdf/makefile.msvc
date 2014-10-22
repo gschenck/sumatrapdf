@@ -59,7 +59,7 @@ MUPDF_GEN_DIR = $(MUPDF_DIR)\generated
 # (path relative to EXTDIR for when an external MuPDF is built)
 # TODO: does NASM have to be replaceable at all?
 !if "$(NASM)"==""
-NASM=$(EXTDIR)\..\bin\nasm.exe
+NASM=.\bin\nasm.exe
 !endif
 
 CC = cl.exe

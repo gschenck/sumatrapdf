@@ -84,6 +84,7 @@ static AboutLayoutInfoEl gAboutLayoutInfo[] = {
     { L"programming",    L"The Programmers",      URL_AUTHORS },
     { L"translations",   L"The Translators",      URL_TRANSLATORS },
     { L"licenses",       L"Various Open Source",  URL_LICENSE },
+    { L"note",       L"custom build without doc restrictions",  NULL },
 #ifdef SVN_PRE_RELEASE_VER
     { L"a note",         L"Pre-release version, for testing only!", NULL },
 #endif

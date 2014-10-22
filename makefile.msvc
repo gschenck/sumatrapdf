@@ -14,7 +14,8 @@
 
 # Set default configuration
 !if "$(CFG)"==""
-CFG=dbg
+#CFG=dbg
+CFG=rel
 !endif
 
 !if "$(BASEDIR)"==""
@@ -66,6 +67,8 @@ CFLAGSOPT = $(CFLAGSOPT) /I$(SRCDIR)/utils/msvc
 CFLAGS = $(CFLAGS) /D "WINVER=0x0500" /D "_WIN32_WINNT=0x0500"
 # Suppress warning C4800: forcing value to bool 'true' or 'false'
 CFLAGS = $(CFLAGS) /wd4800
+
+CFLAGS = $(CFLAGS) /D "DISABLE_DOCUMENT_RESTRICTIONS"
 
 !if "$(WITH_ANALYZE)"=="yes"
 CFLAGS = /analyze:WX- $(CFLAGS)
