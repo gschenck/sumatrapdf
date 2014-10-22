@@ -57,7 +57,7 @@ MUPDF_GEN_DIR = $(MUPDF_DIR)\generated
 
 # full path to NASM can be passed in or we'll assume it's in PATH
 !if "$(NASM)"==""
-NASM=nasm.exe
+NASM=.\bin\nasm.exe
 !endif
 
 CC = cl.exe
