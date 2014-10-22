@@ -531,7 +531,7 @@ static const FieldInfo gGlobalPrefsFields[] = {
     { offsetof(GlobalPrefs, sidebarDx),                Type_Int,        0                                                                                                                     },
     { offsetof(GlobalPrefs, tocDy),                    Type_Int,        0                                                                                                                     },
     { offsetof(GlobalPrefs, showStartPage),            Type_Bool,       true                                                                                                                  },
-    { offsetof(GlobalPrefs, useTabs),                  Type_Bool,       true                                                                                                                  },
+    { offsetof(GlobalPrefs, useTabs),                  Type_Bool,       false                                                                                                                  },
     { (size_t)-1,                                      Type_Comment,    0                                                                                                                     },
     { offsetof(GlobalPrefs, fileStates),               Type_Array,      (intptr_t)&gFileStateInfo                                                                                             },
     { offsetof(GlobalPrefs, reopenOnce),               Type_String,     0                                                                                                                     },
