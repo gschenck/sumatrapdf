@@ -1,3 +1,8 @@
+modified build to default to
+no updates check
+no tabs (old menu visible)
+no document restrictions
+
 SumatraPDF is a multi-format (PDF, EPUB, MOBI, FB2, CHM, XPS, DjVu) reader
 for Windows under (A)GPLv3 license, with some code under BSD license (see
 AUTHORS).

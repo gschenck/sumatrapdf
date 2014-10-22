@@ -518,7 +518,7 @@ static const FieldInfo gGlobalPrefsFields[] = {
     { offsetof(GlobalPrefs, showFavorites),            Type_Bool,       false                                                                                                                 },
     { offsetof(GlobalPrefs, associatedExtensions),     Type_String,     0                                                                                                                     },
     { offsetof(GlobalPrefs, associateSilently),        Type_Bool,       false                                                                                                                 },
-    { offsetof(GlobalPrefs, checkForUpdates),          Type_Bool,       true                                                                                                                  },
+    { offsetof(GlobalPrefs, checkForUpdates),          Type_Bool,       false                                                                                                                  },
     { offsetof(GlobalPrefs, versionToSkip),            Type_String,     0                                                                                                                     },
     { offsetof(GlobalPrefs, rememberOpenedFiles),      Type_Bool,       true                                                                                                                  },
     { offsetof(GlobalPrefs, inverseSearchCmdLine),     Type_String,     0                                                                                                                     },
