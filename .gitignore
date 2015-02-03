@@ -16,3 +16,5 @@ gyp/Debug/
 *.sdf
 vs/obj/
 *pyc
+sumatrapdf.sublime-project
+sumatrapdf.sublime-workspace
