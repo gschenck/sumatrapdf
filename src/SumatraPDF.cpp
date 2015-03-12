@@ -3961,7 +3961,9 @@ static LRESULT FrameOnCommand(WindowInfo *win, HWND hwnd, UINT msg, WPARAM wPara
             break;
 
         case IDM_ADVANCED_OPTIONS:
+#if 0
             OnMenuAdvancedOptions();
+#endif
             break;
 
         case IDM_VIEW_WITH_ACROBAT:
