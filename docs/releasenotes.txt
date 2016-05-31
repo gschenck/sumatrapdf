@@ -3,7 +3,26 @@ the release notes, as we make them, to make the release process easier.
 
 Next version:
 
-3.1 (????-??-??)
+3.2 (????-??-??)
+
+
+3.1.1 (2015-11-02)
+* (re)add support for old processors that don't have SSE2
+* support newer versions of unrar.dll
+* allow keeping browser plugin if it's already installed
+* crash fixes
+
+3.1 (2015-10-24)
+
+* 64bit builds
+* all documents are restored at startup if a window with multiple tabs
+  is closed (or if closing happened through File -> Exit); this can be
+  disabled through the RestoreSession advanced setting
+* printing happens (again) always as image which leads to more reliable
+  results at the cost of requiring more printer memory; the "Print as Image"
+  advanced printing option has been removed
+* scrolling with touchpad (e.g. on Surface Pro) now works
+* many crash and other bug fixes
 
 3.0 (2014-10-18)
 

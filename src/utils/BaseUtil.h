@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 #ifndef BaseUtil_h
@@ -11,9 +11,7 @@
 #define _UNICODE
 #endif
 
-// this tells Visual Studio's STL to not use exceptions and try/catch
-// (otherwise we would have to compile with /EHsc)
-#define _HAS_EXCEPTIONS 0
+#include "BuildConfig.h"
 
 #include <windows.h>
 #include <unknwn.h>
@@ -46,7 +44,6 @@
 #define new DEBUG_NEW
 #endif
 
-#include <wchar.h>
 #include <string.h>
 
 /* Few most common includes for C stdlib */
@@ -83,6 +80,13 @@ inline T *AllocStruct()
     return (T*)calloc(1, sizeof(T));
 }
 
+#if defined(_MSC_VER)
+#define NO_INLINE __declspec(noinline)
+#else
+// assuming gcc or similar
+#define NO_INLINE __attribute__((noinline))
+#endif
+
 #define NoOp()      ((void)0)
 #define dimof(array) (sizeof(DimofSizeHelper(array)))
 template <typename T, size_t N>
@@ -99,6 +103,18 @@ typedef uint64_t uint64;
 static_assert(2 == sizeof(int16) && 2 == sizeof(uint16), "(u)int16 must be two bytes");
 static_assert(4 == sizeof(int32) && 4 == sizeof(uint32), "(u)int32 must be four bytes");
 static_assert(8 == sizeof(int64) && 8 == sizeof(uint64), "(u)int64 must be eight bytes");
+
+// UNUSED is for marking unreferenced function arguments/variables
+// UNREFERENCED_PARAMETER is in windows SDK but too long. We use it if available,
+// otherwise we define our own version.
+// UNUSED might already be defined by mupdf\fits\system.h
+#if !defined(UNUSED)
+    #if defined(UNREFERENCED_PARAMETER)
+        #define UNUSED UNREFERENCED_PARAMETER
+    #else
+        #define UNUSED(P) (P)
+    #endif
+#endif
 
 #pragma warning(push)
 #pragma warning(disable: 6011) // silence /analyze: de-referencing a nullptr pointer
@@ -132,28 +148,53 @@ inline void CrashMe()
 // Just as with assert(), the condition is not guaranteed to be executed
 // in some builds, so it shouldn't contain the actual logic of the code
 
-#define CrashAlwaysIf(cond) \
-    do { if (cond) \
-        CrashMe(); \
-    __analysis_assume(!(cond)); } while (0)
-
+inline void CrashIfFunc(bool cond) {
 #if defined(SVN_PRE_RELEASE_VER) || defined(DEBUG)
-#define CrashIf(cond) CrashAlwaysIf(cond)
+    if (cond) {
+        CrashMe();
+    }
 #else
-#define CrashIf(cond) __analysis_assume(!(cond))
+    UNUSED(cond);
 #endif
+}
 
 // Sometimes we want to assert only in debug build (not in pre-release)
+inline void CrashIfDebugOnlyFunc(bool cond) {
 #if defined(DEBUG)
-#define CrashIfDebugOnly(cond) CrashAlwaysIf(cond)
+    if (cond) { CrashMe(); }
 #else
-#define CrashIfDebugOnly(cond) __analysis_assume(!(cond))
+    UNUSED(cond);
 #endif
+}
+
+#define while_0_nowarn __pragma(warning(push)) __pragma(warning(disable:4127)) while (0) __pragma(warning(pop))
+
+#define CrashIfDebugOnly(cond) \
+    do { \
+        __analysis_assume(!(cond)); \
+        CrashIfDebugOnlyFunc(cond); \
+    } while_0_nowarn
+
+#define CrashAlwaysIf(cond) \
+    do { \
+          __analysis_assume(!(cond)); \
+          if (cond) { CrashMe(); } \
+    } while_0_nowarn
+
+#define CrashIf(cond) \
+    do { \
+        __analysis_assume(!(cond)); \
+        CrashIfFunc(cond); \
+    } while_0_nowarn
 
 // AssertCrash is like assert() but crashes like CrashIf()
 // It's meant to make converting assert() easier (converting to
 // CrashIf() requires inverting the condition, which can introduce bugs)
-#define AssertCrash(exp) CrashIf(!(exp))
+#define AssertCrash(cond) \
+    do { \
+        __analysis_assume(cond); \
+        CrashIfFunc(!(cond)); \
+    } while_0_nowarn
 
 template <typename T>
 inline T limitValue(T val, T min, T max)
@@ -287,7 +328,7 @@ public:
     // Allocator methods
     virtual void *Realloc(void *mem, size_t size) override;
 
-    virtual void Free(void *mem) override {
+    virtual void Free(void *) override {
         // does nothing, we can't free individual pieces of memory
     }
 
@@ -410,5 +451,10 @@ static inline BYTE GetBValueSafe(COLORREF rgb)
 #define GetGValue UseGetGValueSafeInstead
 #undef GetBValue
 #define GetBValue UseGetBValueSafeInstead
+
+#ifdef lstrcpy
+#undef lstrcpy
+#define lstrcpy dont_use_lstrcpy
+#endif
 
 #endif

@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 /* certain OCGs will only be rendered for some of these (e.g. watermarks) */
@@ -94,7 +94,7 @@ public:
     // if this destination's target is an embedded file, this allows to
     // save that file efficiently (the LinkSaverUI might get passed a link
     // to an internal buffer in order to avoid unnecessary memory allocations)
-    virtual bool SaveEmbedded(LinkSaverUI &saveUI) { return false; }
+    virtual bool SaveEmbedded(LinkSaverUI &saveUI) { UNUSED(saveUI);  return false; }
 };
 
 // an user annotation on page
@@ -230,18 +230,15 @@ public:
     // the box inside PageMediabox that actually contains any relevant content
     // (used for auto-cropping in Fit Content mode, can be PageMediabox)
     virtual RectD PageContentBox(int pageNo, RenderTarget target=Target_View) {
+        UNUSED(target);
         return PageMediabox(pageNo);
     }
 
     // renders a page into a cacheable RenderedBitmap
+    // (*cookie_out must be deleted after the call returns)
     virtual RenderedBitmap *RenderBitmap(int pageNo, float zoom, int rotation,
                          RectD *pageRect=nullptr, /* if nullptr: defaults to the page's mediabox */
                          RenderTarget target=Target_View, AbortCookie **cookie_out=nullptr) = 0;
-    // renders a page directly into an hDC (e.g. for printing)
-    virtual bool RenderPage(HDC hDC, RectI screenRect, int pageNo, float zoom, int rotation,
-                         RectD *pageRect=nullptr, /* if nullptr: defaults to the page's mediabox */
-                         RenderTarget target=Target_View, AbortCookie **cookie_out=nullptr) = 0;
-    // for both rendering methods: *cookie_out must be deleted after the call returns
 
     // applies zoom and rotation to a point in user/page space converting
     // it into device/screen space - or in the inverse direction
@@ -257,11 +254,15 @@ public:
     virtual bool SaveFileAs(const WCHAR *copyFileName, bool includeUserAnnots=false) = 0;
     // converts the current file to a PDF file and saves it (overwriting an existing file),
     // (includeUserAnnots should always have an effect)
-    virtual bool SaveFileAsPDF(const WCHAR *pdfFileName, bool includeUserAnnots=false) { return false; }
+    virtual bool SaveFileAsPDF(const WCHAR *pdfFileName, bool includeUserAnnots=false) {
+        UNUSED(pdfFileName);
+        UNUSED(includeUserAnnots);
+        return false;
+    }
     // extracts all text found in the given page (and optionally also the
     // coordinates of the individual glyphs)
-    // caller needs to free() the result and *coords_out (if coords_out is non-nullptr)
-    virtual WCHAR * ExtractPageText(int pageNo, const WCHAR *lineSep, RectI **coords_out=nullptr,
+    // caller needs to free() the result and *coordsOut (if coordsOut is non-nullptr)
+    virtual WCHAR * ExtractPageText(int pageNo, const WCHAR *lineSep, RectI **coordsOut=nullptr,
                                     RenderTarget target=Target_View) = 0;
     // pages where clipping doesn't help are rendered in larger tiles
     virtual bool HasClipOptimizations(int pageNo) = 0;
@@ -303,7 +304,10 @@ public:
 
     // creates a PageDestination from a name (or nullptr for invalid names)
     // caller must delete the result
-    virtual PageDestination *GetNamedDest(const WCHAR *name) { return nullptr; }
+    virtual PageDestination *GetNamedDest(const WCHAR *name) {
+        UNUSED(name);
+        return nullptr;
+    }
     // checks whether this document has an associated Table of Contents
     virtual bool HasTocTree() const { return false; }
     // returns the root element for the loaded document's Table of Contents

@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 #include "BaseUtil.h"
@@ -77,7 +77,7 @@ void DictTestMapStrToInt()
         ok = d.Remove(k, nullptr);
         utassert(ok);
     }
-    FreeVecMembers(toRemove);
+    toRemove.FreeMembers();
 }
 
 void DictTest()

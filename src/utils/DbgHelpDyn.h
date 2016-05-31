@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD */
 
 // We're not using DebugLog.[h|cpp] here to make sure logging doesn't allocate
@@ -11,8 +11,7 @@
 namespace dbghelp 
 {
 
-bool Load();
-bool Initialize(const WCHAR *symPathW, bool force = false);
+bool Initialize(const WCHAR *symPath, bool force);
 bool HasSymbols();
 void WriteMiniDump(const WCHAR *crashDumpFilePath, MINIDUMP_EXCEPTION_INFORMATION* mei, bool fullDump);
 void GetThreadCallstack(str::Str<char>& s, DWORD threadId);

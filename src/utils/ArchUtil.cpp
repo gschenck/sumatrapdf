@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 #include "BaseUtil.h"
@@ -259,6 +259,11 @@ UnRarDll::UnRarDll()
 {
     if (!RARGetDllVersion) {
         ScopedMem<WCHAR> dllPath(path::GetAppPath(L"unrar.dll"));
+#ifdef _WIN64
+        ScopedMem<WCHAR> dll64Path(path::GetAppPath(L"unrar64.dll"));
+        if (file::Exists(dll64Path))
+            dllPath.Set(dll64Path.StealData());
+#endif
         if (!file::Exists(dllPath))
             return;
         HMODULE h = LoadLibrary(dllPath);
@@ -277,7 +282,8 @@ UnRarDll::UnRarDll()
 
 bool UnRarDll::ExtractFilenames(const WCHAR *rarPath, WStrList &filenames)
 {
-    if (!RARGetDllVersion || RARGetDllVersion() != RAR_DLL_VERSION || !rarPath)
+    // assume that unrar.dll is forward compatible (as indicated by its documentation)
+    if (!RARGetDllVersion || RARGetDllVersion() < RAR_DLL_VERSION || !rarPath)
         return false;
 
     RAROpenArchiveDataEx arcData = { 0 };
@@ -316,7 +322,8 @@ static int CALLBACK unrarCallback(UINT msg, LPARAM userData, LPARAM rarBuffer, L
 
 char *UnRarDll::GetFileByName(const WCHAR *rarPath, const WCHAR *filename, size_t *len)
 {
-    if (!RARGetDllVersion || RARGetDllVersion() != RAR_DLL_VERSION || !rarPath)
+    // assume that unrar.dll is forward compatible (as indicated by its documentation)
+    if (!RARGetDllVersion || RARGetDllVersion() < RAR_DLL_VERSION || !rarPath)
         return false;
 
     str::Str<char> data;

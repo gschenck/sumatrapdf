@@ -1,4 +1,4 @@
-/* Copyright 2014 the unarr project authors (see AUTHORS file).
+/* Copyright 2015 the unarr project authors (see AUTHORS file).
    License: LGPLv3 */
 
 #ifndef _7z_7z_h
@@ -6,7 +6,7 @@
 
 #include "../common/unarr-imp.h"
 
-#include "../lzmasdk/Types.h"
+#include "../lzmasdk/7zTypes.h"
 #ifdef HAVE_7Z
 #include <7z.h>
 #endif

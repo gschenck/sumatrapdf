@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 // include BaseUtil.h instead of including directly
@@ -48,6 +48,7 @@ public:
     explicit ScopedHandle(HANDLE handle) : handle(handle) { }
     ~ScopedHandle() { CloseHandle(handle); }
     operator HANDLE() const { return handle; }
+    bool IsValid() const { return handle != NULL && handle != INVALID_HANDLE_VALUE; }
 };
 
 // deletes any object at the end of the scope
@@ -147,6 +148,8 @@ public:
     operator T() const { return obj; }
 };
 typedef ScopedGdiObj<HFONT> ScopedFont;
+typedef ScopedGdiObj<HPEN> ScopedPen;
+typedef ScopedGdiObj<HBRUSH> ScopedBrush;
 
 class ScopedHdcSelect {
     HDC hdc;

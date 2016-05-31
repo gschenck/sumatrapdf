@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -190,7 +190,6 @@ static MenuDef menuDefHelp[] = {
 //[ ACCESSKEY_GROUP Debug Menu
 static MenuDef menuDefDebug[] = {
     { "Highlight links",                    IDM_DEBUG_SHOW_LINKS,       MF_NO_TRANSLATE },
-    { "Toggle PDF/XPS renderer",            IDM_DEBUG_GDI_RENDERER,     MF_NO_TRANSLATE },
     { "Toggle ebook UI",                    IDM_DEBUG_EBOOK_UI,         MF_NO_TRANSLATE },
     { "Mui debug paint",                    IDM_DEBUG_MUI,              MF_NO_TRANSLATE },
     { "Annotation from Selection",          IDM_DEBUG_ANNOTATION,       MF_NO_TRANSLATE },
@@ -268,7 +267,8 @@ static void AddFileMenuItem(HMENU menuFile, const WCHAR *filePath, UINT index)
 
     ScopedMem<WCHAR> menuString;
     const WCHAR *fileName = win::menu::ToSafeString(path::GetBaseName(filePath), menuString);
-    menuString = str::Format(L"&%d) %s", (index + 1) % 10, fileName);
+    int menuIdx = (int) ((index + 1) % 10);
+    menuString = str::Format(L"&%d) %s", menuIdx, fileName);
     UINT menuId = IDM_FILE_HISTORY_FIRST + index;
     InsertMenu(menuFile, IDM_EXIT, MF_BYCOMMAND | MF_ENABLED | MF_STRING, menuId, menuString);
 }
@@ -370,7 +370,7 @@ static float ZoomMenuItemToZoom(UINT menuItemId)
 
 static void ZoomMenuItemCheck(HMENU m, UINT menuItemId, bool canZoom)
 {
-    AssertCrash(IDM_ZOOM_FIRST <= menuItemId && menuItemId <= IDM_ZOOM_LAST);
+    AssertCrash((IDM_ZOOM_FIRST <= menuItemId) && (menuItemId <= IDM_ZOOM_LAST));
 
     for (int i = 0; i < dimof(gZoomMenuIds); i++)
         win::menu::SetEnabled(m, gZoomMenuIds[i].itemId, canZoom);
@@ -456,7 +456,7 @@ void MenuUpdateStateForWindow(WindowInfo* win)
 
     MenuUpdatePrintItem(win, win->menu);
 
-    bool enabled = win->IsDocLoaded() && tab->ctrl->HasTocTree();
+    bool enabled = win->IsDocLoaded() && tab && tab->ctrl->HasTocTree();
     win::menu::SetEnabled(win->menu, IDM_VIEW_BOOKMARKS, enabled);
 
     bool documentSpecific = win->IsDocLoaded();
@@ -468,7 +468,7 @@ void MenuUpdateStateForWindow(WindowInfo* win)
     MenuUpdateDisplayMode(win);
     MenuUpdateZoom(win);
 
-    if (win->IsDocLoaded()) {
+    if (win->IsDocLoaded() && tab) {
         win::menu::SetEnabled(win->menu, IDM_GOTO_NAV_BACK, tab->ctrl->CanNavigate(-1));
         win::menu::SetEnabled(win->menu, IDM_GOTO_NAV_FORWARD, tab->ctrl->CanNavigate(1));
     }
@@ -494,7 +494,6 @@ void MenuUpdateStateForWindow(WindowInfo* win)
 
 #ifdef SHOW_DEBUG_MENU_ITEMS
     win::menu::SetChecked(win->menu, IDM_DEBUG_SHOW_LINKS, gDebugShowLinks);
-    win::menu::SetChecked(win->menu, IDM_DEBUG_GDI_RENDERER, gUseGdiRenderer);
     win::menu::SetChecked(win->menu, IDM_DEBUG_EBOOK_UI, gGlobalPrefs->ebookUI.useFixedPageUI);
     win::menu::SetChecked(win->menu, IDM_DEBUG_MUI, mui::IsDebugPaint());
     win::menu::SetEnabled(win->menu, IDM_DEBUG_ANNOTATION, tab && tab->selectionOnPage && win->showSelection &&

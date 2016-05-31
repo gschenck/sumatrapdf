@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 /* The most basic things, including string handling functions */
@@ -320,18 +320,22 @@ WCHAR *DupN(const WCHAR *s, size_t lenCch)
     return res;
 }
 
-void ToLower(char *s)
+char *ToLowerInPlace(char *s)
 {
-    if (!s) return;
-    for (; *s; s++)
-        *s = (char)tolower(*s);
+    char *res = s;
+    for (; s && *s; s++) {
+      *s = (char)tolower(*s);
+    }
+    return res;
 }
 
-void ToLower(WCHAR *s)
+WCHAR* ToLowerInPlace(WCHAR *s)
 {
-    if (!s) return;
-    for (; *s; s++)
-        *s = towlower(*s);
+    WCHAR *res = s;
+    for (; s && *s; s++) {
+      *s = towlower(*s);
+    }
+    return res;
 }
 
 /* Caller needs to free() the result */
@@ -836,7 +840,7 @@ bool HexToMem(const char *s, unsigned char *buf, size_t bufLen)
 // Caller needs to free() the result.
 WCHAR *FormatNumWithThousandSep(size_t num, LCID locale)
 {
-    WCHAR thousandSep[4];
+    WCHAR thousandSep[4] = { 0 };
     if (!GetLocaleInfo(locale, LOCALE_STHOUSAND, thousandSep, dimof(thousandSep)))
         str::BufSet(thousandSep, dimof(thousandSep), L",");
     ScopedMem<WCHAR> buf(str::Format(L"%Iu", num));
@@ -1503,7 +1507,7 @@ static inline const char *StrEqWeird(const char *s, const WCHAR *toFind)
     }
 }
 
-// conceptually strings is an array of 0-terminated strings where,  laid
+// conceptually strings is an array of 0-terminated strings where, laid
 // out sequentially in memory, terminated with a 0-length string
 // Returns index of toFind string in strings
 // Returns -1 if string doesn't exist

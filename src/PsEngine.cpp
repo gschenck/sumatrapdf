@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -236,10 +236,6 @@ public:
                          RenderTarget target=Target_View, AbortCookie **cookie_out=nullptr) {
         return pdfEngine->RenderBitmap(pageNo, zoom, rotation, pageRect, target, cookie_out);
     }
-    virtual bool RenderPage(HDC hDC, RectI screenRect, int pageNo, float zoom, int rotation,
-                         RectD *pageRect=nullptr, RenderTarget target=Target_View, AbortCookie **cookie_out=nullptr) {
-        return pdfEngine->RenderPage(hDC, screenRect, pageNo, zoom, rotation, pageRect, target, cookie_out);
-    }
 
     virtual PointD Transform(PointD pt, int pageNo, float zoom, int rotation, bool inverse=false) {
         return pdfEngine->Transform(pt, pageNo, zoom, rotation, inverse);
@@ -252,14 +248,15 @@ public:
         return (unsigned char *)file::ReadAll(fileName, cbCount);
     }
     virtual bool SaveFileAs(const WCHAR *copyFileName, bool includeUserAnnots=false) {
+        UNUSED(includeUserAnnots);
         return fileName ? CopyFile(fileName, copyFileName, FALSE) : false;
     }
     virtual bool SaveFileAsPDF(const WCHAR *pdfFileName, bool includeUserAnnots=false) {
         return pdfEngine->SaveFileAs(pdfFileName, includeUserAnnots);
     }
-    virtual WCHAR * ExtractPageText(int pageNo, const WCHAR *lineSep, RectI **coords_out=nullptr,
+    virtual WCHAR * ExtractPageText(int pageNo, const WCHAR *lineSep, RectI **coordsOut=nullptr,
                                     RenderTarget target=Target_View) {
-        return pdfEngine->ExtractPageText(pageNo, lineSep, coords_out, target);
+        return pdfEngine->ExtractPageText(pageNo, lineSep, coordsOut, target);
     }
     virtual bool HasClipOptimizations(int pageNo) {
         return pdfEngine->HasClipOptimizations(pageNo);

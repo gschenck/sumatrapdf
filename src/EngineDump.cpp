@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -11,7 +11,6 @@
 #include "WinUtil.h"
 // rendering engines
 #include "BaseEngine.h"
-#include "PdfEngine.h"
 #include "DjVuEngine.h"
 #include "EngineManager.h"
 #include "FileModifications.h"
@@ -403,12 +402,15 @@ public:
     explicit PasswordHolder(const WCHAR *password) : password(password) { }
     virtual WCHAR * GetPassword(const WCHAR *fileName, unsigned char *fileDigest,
                                 unsigned char decryptionKeyOut[32], bool *saveKey) {
+        UNUSED(fileName); UNUSED(fileDigest);
+        UNUSED(decryptionKeyOut);  UNUSED(saveKey);
         return str::Dup(password);
     }
 };
 
 int main(int argc, char **argv)
 {
+    UNUSED(argc); UNUSED(argv);
     setlocale(LC_ALL, "C");
     DisableDataExecution();
 
@@ -426,7 +428,6 @@ Usage:
     bool fullDump = true;
     WCHAR *renderPath = nullptr;
     float renderZoom = 1.f;
-    bool useAlternateHandlers = false;
     bool loadOnly = false, silent = false;
 #ifdef DEBUG
     int breakAlloc = 0;
@@ -446,9 +447,6 @@ Usage:
             }
             renderPath = argList.At(++i);
         }
-        // -alt is for debugging alternate rendering methods
-        else if (str::Eq(argList.At(i), L"-alt"))
-            useAlternateHandlers = true;
         // -loadonly and -silent are only meant for profiling
         else if (str::Eq(argList.At(i), L"-loadonly"))
             loadOnly = true;
@@ -481,9 +479,6 @@ Usage:
         freopen_s(&nul, "NUL", "w", stdout);
         freopen_s(&nul, "NUL", "w", stderr);
     }
-
-    // optionally use GDI+ rendering for PDF/XPS
-    DebugGdiPlusDevice(useAlternateHandlers);
 
     ScopedGdiPlus gdiPlus;
     ScopedMiniMui miniMui;

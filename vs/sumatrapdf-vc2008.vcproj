@@ -121,6 +121,27 @@
 				CompileAsManaged=""
 			/>
 		</Configuration>
+		<Configuration
+			Name="UnitTests|Win32"
+			OutputDirectory="$(ConfigurationName)"
+			IntermediateDirectory="$(ConfigurationName)"
+			ConfigurationType="0"
+			BuildLogFile="..\obj-dbg\BuildLog.htm"
+			>
+			<Tool
+				Name="VCNMakeTool"
+				BuildCommandLine="..\scripts\vc.bat &amp; nmake -f ..\makefile.msvc BASEDIR=.. CFG=dbg UnitTest"
+				ReBuildCommandLine="..\scripts\vc.bat &amp; nmake -f ..\makefile.msvc BASEDIR=.. CFG=dbg rebuild UnitTest"
+				CleanCommandLine="del /s ..\obj-dbg\*.obj"
+				Output="..\obj-dbg\test_util.exe"
+				PreprocessorDefinitions="WIN32;DEBUG;_DEBUG;UNICODE;_UNICODE"
+				IncludeSearchPath="..\src;..\src\utils;..\src\utils\tests"
+				ForcedIncludes=""
+				AssemblySearchPath=""
+				ForcedUsingAssemblies=""
+				CompileAsManaged=""
+			/>
+		</Configuration>
 	</Configurations>
 	<References>
 	</References>
@@ -128,6 +149,10 @@
 		<Filter
 			Name="baseutils"
 			>
+			<File
+				RelativePath="..\src\utils\BuildConfig.h"
+				>
+			</File>
 			<Filter
 				Name="dataformats"
 				>
@@ -312,19 +337,19 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\utils\Touch.cpp"
-					>
-				</File>
-				<File
-					RelativePath="..\src\utils\Touch.h"
-					>
-				</File>
-				<File
 					RelativePath="..\src\utils\UITask.cpp"
 					>
 				</File>
 				<File
 					RelativePath="..\src\utils\UITask.h"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\WinDynCalls.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\WinDynCalls.h"
 					>
 				</File>
 				<File
@@ -721,6 +746,90 @@
 				</File>
 				<File
 					RelativePath="..\src\wingui\Win32Window.h"
+					>
+				</File>
+			</Filter>
+			<Filter
+				Name="tests"
+				>
+				<File
+					RelativePath="..\src\utils\tests\BaseUtil_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\ByteOrderDecoder_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\CmdLineParser_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\CryptoUtil_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\CssParser_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\Dict_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\FileUtil_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\HtmlPrettyPrint_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\HtmlPullParser_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\JsonParser_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\SettingsUtil_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\SimpleLog_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\SquareTreeParser_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\StrFormat_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\StrUtil_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\tools\test_util.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\TrivialHtmlParser_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\VarintGob_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\Vec_ut.cpp"
+					>
+				</File>
+				<File
+					RelativePath="..\src\utils\tests\WinUtil_ut.cpp"
 					>
 				</File>
 			</Filter>
@@ -1234,10 +1343,6 @@
 					>
 				</File>
 				<File
-					RelativePath="..\src\MakeLzSA.cpp"
-					>
-				</File>
-				<File
 					RelativePath="..\src\MuiEbookPageDef.cpp"
 					>
 				</File>
@@ -1485,10 +1590,6 @@
 				</File>
 				<File
 					RelativePath="..\mupdf\source\fitz\function.c"
-					>
-				</File>
-				<File
-					RelativePath="..\mupdf\source\fitz\gdiplus-device.cpp"
 					>
 				</File>
 				<File

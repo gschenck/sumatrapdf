@@ -1,10 +1,9 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
 #include "BaseUtil.h"
-#include <dbghelp.h>
-#include <tlhelp32.h>
+#include "WinDynCalls.h"
 #include "CmdLineParser.h"
 #include "DbgHelpDyn.h"
 #include "FileUtil.h"
@@ -98,10 +97,14 @@ WCHAR *AppGenDataFilename(const WCHAR *fileName)
 
     /* Use %APPDATA% */
     ScopedMem<WCHAR> path(GetSpecialFolder(CSIDL_APPDATA, true));
+    CrashIf(!path);
     if (!path)
         return nullptr;
     path.Set(path::Join(path, APP_NAME_STR));
-    if (!path || !dir::Create(path))
+    if (!path)
+        return nullptr;
+    bool ok = dir::Create(path);
+    if (!ok)
         return nullptr;
     return path::Join(path, fileName);
 }
@@ -185,15 +188,17 @@ void DoAssociateExeWithPdfExtension(HKEY hkey)
     WriteRegStr(hkey, REG_CLASSES_APP L"\\shell\\printto\\command", nullptr, cmdPath);
 
     // Only change the association if we're confident, that we've registered ourselves well enough
-    if (ok) {
-        WriteRegStr(hkey, REG_CLASSES_PDF, nullptr, APP_NAME_STR);
-        // TODO: also add SumatraPDF to the Open With lists for the other supported extensions?
-        WriteRegStr(hkey, REG_CLASSES_PDF L"\\OpenWithProgids", APP_NAME_STR, L"");
-        if (hkey == HKEY_CURRENT_USER) {
-            WriteRegStr(hkey, REG_EXPLORER_PDF_EXT, L"Progid", APP_NAME_STR);
-            SHDeleteValue(hkey, REG_EXPLORER_PDF_EXT, L"Application");
-            DeleteRegKey(hkey, REG_EXPLORER_PDF_EXT L"\\UserChoice", true);
-        }
+    if (!ok)
+        return;
+
+    WriteRegStr(hkey, REG_CLASSES_PDF, nullptr, APP_NAME_STR);
+    // TODO: also add SumatraPDF to the Open With lists for the other supported extensions?
+    WriteRegStr(hkey, REG_CLASSES_PDF L"\\OpenWithProgids", APP_NAME_STR, L"");
+    if (hkey == HKEY_CURRENT_USER) {
+        WriteRegStr(hkey, REG_EXPLORER_PDF_EXT, L"Progid", APP_NAME_STR);
+        CrashIf(hkey == 0); // to appease prefast
+        SHDeleteValue(hkey, REG_EXPLORER_PDF_EXT, L"Application");
+        DeleteRegKey(hkey, REG_EXPLORER_PDF_EXT L"\\UserChoice", true);
     }
 }
 
@@ -359,6 +364,8 @@ WCHAR *AutoDetectInverseSearchCommands(HWND hwndCombo)
 // (or responds to Ctrl+Backspace as nowadays expected)
 bool ExtendedEditWndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    UNUSED(lParam);
+
     static bool delayFocus = false;
 
     switch (message) {

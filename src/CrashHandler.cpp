@@ -1,14 +1,12 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD */
 
 // utils
 #include "BaseUtil.h"
-#include <dbghelp.h>
 #include <exception>
 #include <tlhelp32.h>
 #include <signal.h>
-#include <dbghelp.h>
-#include <tlhelp32.h>
+#include "WinDynCalls.h"
 #include "DbgHelpDyn.h"
 #include "FileUtil.h"
 #include "HttpUtil.h"
@@ -22,14 +20,6 @@
 #define NOLOG 1 // 0 for more detailed debugging, 1 to disable lf()
 #include "DebugLog.h"
 
-#ifndef SYMBOL_DOWNLOAD_URL
-#ifdef SVN_PRE_RELEASE_VER
-#define SYMBOL_DOWNLOAD_URL L"http://kjkpub.s3.amazonaws.com/sumatrapdf/prerel/SumatraPDF-prerelease-" TEXT(QM(SVN_PRE_RELEASE_VER)) L".pdb.lzsa"
-#else
-#define SYMBOL_DOWNLOAD_URL L"http://kjkpub.s3.amazonaws.com/sumatrapdf/rel/SumatraPDF-" TEXT(QM(CURR_VERSION)) L".pdb.lzsa"
-#endif
-#endif
-
 #if !defined(CRASH_SUBMIT_SERVER) || !defined(CRASH_SUBMIT_URL)
 #define CRASH_SUBMIT_SERVER L"blog.kowalczyk.info"
 #define CRASH_SUBMIT_URL    L"/app/crashsubmit?appname=SumatraPDF"
@@ -39,7 +29,7 @@
 // and sumatra proper. They must be implemented for each app.
 extern void GetStressTestInfo(str::Str<char>* s);
 extern bool CrashHandlerCanUseNet();
-extern void CrashHandlerMessage();
+extern void ShowCrashHandlerMessage();
 extern void GetProgramInfo(str::Str<char>& s);
 
 /* Note: we cannot use standard malloc()/free()/new()/delete() in crash handler.
@@ -88,6 +78,7 @@ static CrashHandlerAllocator *gCrashHandlerAllocator = nullptr;
 
 // Note: intentionally not using ScopedMem<> to avoid
 // static initializers/destructors, which are bad
+static WCHAR *  gSymbolsUrl = nullptr;
 static WCHAR *  gCrashDumpPath = nullptr;
 static WCHAR *  gSymbolPathW = nullptr;
 static WCHAR *  gSymbolsDir = nullptr;
@@ -233,7 +224,7 @@ static bool DownloadAndUnzipSymbols(const WCHAR *pdbZipPath, const WCHAR *symDir
     plog("DownloadAndUnzipSymbols(): DEBUG build so not doing anything");
     return false;
 #else
-    if (!HttpGetToFile(SYMBOL_DOWNLOAD_URL, pdbZipPath)) {
+    if (!HttpGetToFile(gSymbolsUrl, pdbZipPath)) {
         plog("DownloadAndUnzipSymbols(): couldn't download symbols");
         return false;
     }
@@ -278,7 +269,7 @@ void SubmitCrashInfo()
     }
 
     char *s = nullptr;
-    if (!dbghelp::Initialize(gSymbolPathW)) {
+    if (!dbghelp::Initialize(gSymbolPathW, false)) {
         plog("SubmitCrashInfo(): dbghelp::Initialize() failed");
         return;
     }
@@ -309,11 +300,9 @@ void SubmitCrashInfo()
 
 static DWORD WINAPI CrashDumpThread(LPVOID data)
 {
+    UNUSED(data);
     WaitForSingleObject(gDumpEvent, INFINITE);
     if (!gCrashed)
-        return 0;
-
-    if (!dbghelp::Load())
         return 0;
 
 #ifndef HAS_NO_SYMBOLS
@@ -346,7 +335,7 @@ static LONG WINAPI DumpExceptionHandler(EXCEPTION_POINTERS *exceptionInfo)
     SetEvent(gDumpEvent);
     WaitForSingleObject(gDumpThread, INFINITE);
 
-    CrashHandlerMessage();
+    ShowCrashHandlerMessage();
     TerminateProcess(GetCurrentProcess(), 1);
 
     return EXCEPTION_CONTINUE_SEARCH;
@@ -525,7 +514,7 @@ static bool GetModules(str::Str<char>& s)
         if (str::EqI(nameA.Get(), "winex11.drv"))
             isWine = true;
         ScopedMem<char> pathA(str::conv::ToUtf8(mod.szExePath));
-        s.AppendFmt("Module: %08X %06X %-16s %s\r\n", (DWORD)mod.modBaseAddr, (DWORD)mod.modBaseSize, nameA.Get(), pathA.Get());
+        s.AppendFmt("Module: %p %06X %-16s %s\r\n", mod.modBaseAddr, mod.modBaseSize, nameA.Get(), pathA.Get());
         cont = Module32Next(snap, &mod);
     }
     CloseHandle(snap);
@@ -611,6 +600,21 @@ static bool BuildSymbolPath()
     return true;
 }
 
+// Get url for file with symbols. Caller needs to free().
+static WCHAR *BuildSymbolsUrl() {
+#ifdef SYMBOL_DOWNLOAD_URL
+    return str::Dup(SYMBOL_DOWNLOAD_URL);
+#else
+#ifdef SVN_PRE_RELEASE_VER
+    WCHAR *urlBase = L"https://kjkpub.s3.amazonaws.com/sumatrapdf/prerel/SumatraPDF-prerelease-" TEXT(QM(SVN_PRE_RELEASE_VER));
+#else
+    WCHAR *urlBase = L"https://kjkpub.s3.amazonaws.com/sumatrapdf/rel/SumatraPDF-" TEXT(QM(CURR_VERSION));
+#endif
+    WCHAR *is64 = IsProcess64() ? L"-64" : L"";
+    return str::Format(L"%s%s.pdb.lzsa", urlBase, is64);
+#endif
+}
+
 // detect which exe it is (installer, sumatra static or sumatra with dlls)
 static ExeType DetectExeType()
 {
@@ -640,6 +644,7 @@ static ExeType DetectExeType()
 }
 
 void __cdecl onSignalAbort(int code) {
+    UNUSED(code);
     // put the signal back because can be called many times
     // (from multiple threads) and raise() resets the handler
     signal(SIGABRT, onSignalAbort);
@@ -686,6 +691,7 @@ void InstallCrashHandler(const WCHAR *crashDumpPath, const WCHAR *symDir)
     // when crash handler is invoked. It's ok to use standard
     // allocation functions here.
     gCrashHandlerAllocator = new CrashHandlerAllocator();
+    gSymbolsUrl = BuildSymbolsUrl();
     gCrashDumpPath = str::Dup(crashDumpPath);
     gDumpEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     if (!gDumpEvent)
@@ -719,6 +725,7 @@ void UninstallCrashHandler()
     CloseHandle(gDumpEvent);
 
     free(gCrashDumpPath);
+    free(gSymbolsUrl);
     free(gSymbolsDir);
     free(gPdbZipPath);
     free(gLibMupdfPdbPath);

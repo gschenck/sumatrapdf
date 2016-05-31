@@ -1,10 +1,8 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 #include "BaseUtil.h"
-#include <UIAutomationCore.h>
-#include <UIAutomationCoreApi.h>
-#include <OleAcc.h>
+#include "WinDynCalls.h"
 #include "BaseEngine.h"
 #include "uia/TextRange.h"
 #include "SettingsStructs.h"
@@ -359,6 +357,7 @@ HRESULT STDMETHODCALLTYPE SumatraUIAutomationTextRange::ExpandToEnclosingUnit(en
 
 HRESULT STDMETHODCALLTYPE SumatraUIAutomationTextRange::FindAttribute(TEXTATTRIBUTEID attr, VARIANT val, BOOL backward, ITextRangeProvider **found)
 {
+    UNUSED(attr); UNUSED(val); UNUSED(backward);
     if (found == nullptr)
         return E_POINTER;
     if (!document->IsDocumentLoaded())
@@ -371,6 +370,7 @@ HRESULT STDMETHODCALLTYPE SumatraUIAutomationTextRange::FindAttribute(TEXTATTRIB
 
 HRESULT STDMETHODCALLTYPE SumatraUIAutomationTextRange::FindText(BSTR text, BOOL backward, BOOL ignoreCase, ITextRangeProvider **found)
 {
+    UNUSED(text); UNUSED(backward); UNUSED(ignoreCase);
     if (found == nullptr)
         return E_POINTER;
     if (!document->IsDocumentLoaded())
@@ -382,6 +382,7 @@ HRESULT STDMETHODCALLTYPE SumatraUIAutomationTextRange::FindText(BSTR text, BOOL
 
 HRESULT STDMETHODCALLTYPE SumatraUIAutomationTextRange::GetAttributeValue(TEXTATTRIBUTEID attr, VARIANT *value)
 {
+    UNUSED(attr);
     if (value == nullptr)
         return E_POINTER;
     if (!document->IsDocumentLoaded())

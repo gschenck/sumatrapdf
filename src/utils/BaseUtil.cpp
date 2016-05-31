@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 #include "BaseUtil.h"
@@ -93,10 +93,11 @@ void PoolAllocator::AllocBlock(size_t minSize) {
 
 // Allocator methods
 void *PoolAllocator::Realloc(void *mem, size_t size) {
+    UNUSED(mem);  UNUSED(size);
     // TODO: we can't do that because we don't know the original
     // size of memory piece pointed by mem. We could remember it
     // within the block that we allocate
-    CrashAlwaysIf(true);
+    CrashMe();
     return nullptr;
 }
 

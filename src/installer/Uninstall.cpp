@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // Note: this is not built by itself but included in Installer.cpp
@@ -237,6 +237,7 @@ static bool RemoveShortcut(bool allUsers)
 
 DWORD WINAPI UninstallerThread(LPVOID data)
 {
+    UNUSED(data);
     // also kill the original uninstaller, if it's just spawned
     // a DELETE_ON_CLOSE copy from the temp directory
     WCHAR *exePath = GetUninstallerPath();
@@ -319,8 +320,7 @@ bool OnWmCommand(WPARAM wParam)
 
 void OnCreateWindow(HWND hwnd)
 {
-    // TODO: this button might be too narrow for some translations
-    gHwndButtonInstUninst = CreateDefaultButton(hwnd, _TR("Uninstall SumatraPDF"), 150);
+    gHwndButtonInstUninst = CreateDefaultButton(hwnd, _TR("Uninstall SumatraPDF"), IDOK);
 }
 
 void CreateMainWindow()

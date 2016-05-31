@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 // TODO: this is meant to evolve into a scroll bar (which can also serve
@@ -22,19 +22,18 @@
 // TODO: needs all the other scrollbar functionality
 
 // TODO: we don't take padding int account yet
-class ScrollBar : public Control
-{
-    int     onOverDy;    // when mouse is over
-    int     inactiveDy;  // when mouse is not over
+class ScrollBar : public Control {
+    int onOverDy;   // when mouse is over
+    int inactiveDy; // when mouse is not over
 
     // what percentage of the rectangle is filled with PropColor
     // (the rest is filled with PropBgColor).
     // The range is from 0 to 1
-    float   filledPerc;
+    float filledPerc;
 
-public:
+  public:
     ScrollBar(int onOverDy = 12, int inactiveDy = 5);
-    ~ScrollBar() { }
+    ~ScrollBar() {}
     virtual Size Measure(const Size availableSize);
     virtual void NotifyMouseEnter();
     virtual void NotifyMouseLeave();
@@ -46,4 +45,4 @@ public:
 };
 
 float PercFromInt(int total, int n);
-int   IntFromPerc(int total, float perc);
+int IntFromPerc(int total, float perc);

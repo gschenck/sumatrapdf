@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 #include "BaseUtil.h"
@@ -158,7 +158,7 @@ static LRESULT CALLBACK WndProcLabelWithClose(HWND hwnd, UINT msg, WPARAM wp, LP
     }
 
     if (WM_GETFONT == msg) {
-        return (HRESULT)w->font;
+        return (LRESULT)w->font;
     }
 
     if (WM_SIZE == msg) {
@@ -236,8 +236,9 @@ LabelWithCloseWnd *CreateLabelWithCloseWnd(HWND parent, int cmd) {
     w->txtCol = GetSysColor(COLOR_BTNTEXT);
 
     // sets w->hwnd during WM_NCCREATE
-    CreateWindow(WND_CLASS_NAME, L"", WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, parent, (HMENU)cmd,
-                 GetModuleHandle(nullptr), w);
+    HWND hwnd = CreateWindow(WND_CLASS_NAME, L"", WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, parent,
+                             (HMENU)(INT_PTR)cmd, GetModuleHandle(nullptr), w);
+    CrashIf(w->hwnd != hwnd);
     CrashIf(!w->hwnd);
     return w;
 }

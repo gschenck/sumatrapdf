@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 #include "BaseUtil.h"
@@ -49,9 +49,9 @@ Bitmap *ImageFromData(const char *data, size_t len)
 #else
 
 namespace webp {
-bool HasSignature(const char *data, size_t len) { return false; }
-Gdiplus::Size SizeFromData(const char *data, size_t len) { return Gdiplus::Size(); }
-Gdiplus::Bitmap *ImageFromData(const char *data, size_t len) { return nullptr; }
+    bool HasSignature(const char *data, size_t len) { UNUSED(data); UNUSED(len); return false; }
+    Gdiplus::Size SizeFromData(const char *data, size_t len) { UNUSED(data); UNUSED(len); return Gdiplus::Size(); }
+    Gdiplus::Bitmap *ImageFromData(const char *data, size_t len) { UNUSED(data); UNUSED(len); return nullptr; }
 }
 
 #endif

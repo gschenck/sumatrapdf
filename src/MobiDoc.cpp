@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 // utils
@@ -924,7 +924,6 @@ bool MobiDoc::ParseToc(EbookTocVisitor *visitor)
                 itemLink.Set(str::conv::FromHtmlUtf8(attr->val, attr->valLen));
         }
         else if (itemLink && tok->IsEndTag() && Tag_A == tok->tag) {
-            PageDestination *dest = nullptr;
             if (!itemText) {
                 itemLink.Set(nullptr);
                 continue;

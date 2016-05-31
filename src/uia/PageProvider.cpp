@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 #include "BaseUtil.h"
@@ -217,6 +217,7 @@ HRESULT STDMETHODCALLTYPE SumatraUIAutomationPageProvider::get_ProviderOptions(P
 
 HRESULT STDMETHODCALLTYPE SumatraUIAutomationPageProvider::SetValue(LPCWSTR val)
 {
+    UNUSED(val);
     return E_ACCESSDENIED;
 }
 

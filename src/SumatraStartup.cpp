@@ -1,14 +1,9 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
 #include "BaseUtil.h"
-#include <UIAutomationCore.h>
-#include <UIAutomationCoreApi.h>
-#include <dwmapi.h>
-#include <vssym32.h>
-#include <dbghelp.h>
-#include <tlhelp32.h>
+#include "WinDynCalls.h"
 #include "CmdLineParser.h"
 #include "DbgHelpDyn.h"
 #include "Dpi.h"
@@ -24,7 +19,6 @@
 #include "WinUtil.h"
 // rendering engines
 #include "BaseEngine.h"
-#include "PdfEngine.h"
 #include "EngineManager.h"
 // layout controllers
 #include "SettingsStructs.h"
@@ -41,6 +35,7 @@
 #include "WindowInfo.h"
 #include "TabInfo.h"
 #include "resource.h"
+#include "ParseCommandLine.h"
 #include "AppPrefs.h"
 #include "AppTools.h"
 #include "Canvas.h"
@@ -48,7 +43,6 @@
 #include "CrashHandler.h"
 #include "FileThumbnails.h"
 #include "Notifications.h"
-#include "ParseCommandLine.h"
 #include "Print.h"
 #include "Search.h"
 #include "Selection.h"
@@ -59,6 +53,7 @@
 #include "uia/Provider.h"
 #include "StressTesting.h"
 #include "Version.h"
+#include "Tests.h"
 
 // "SumatraPDF yellow" similar to the one use for icon and installer
 #define ABOUT_BG_LOGO_COLOR     RGB(0xFF, 0xF2, 0x00)
@@ -234,7 +229,7 @@ COLORREF GetNoDocBgColor()
     return COL_WINDOW_BG;
 }
 
-static bool InstanceInit(int nCmdShow)
+static bool InstanceInit()
 {
     gCursorDrag     = LoadCursor(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDC_CURSORDRAG));
     CrashIf(!gCursorDrag);
@@ -435,7 +430,7 @@ static HWND FindPrevInstWindow(HANDLE *hMutex)
     // create a unique identifier for this executable
     // (allows independent side-by-side installations)
     ScopedMem<WCHAR> exePath(GetExePath());
-    str::ToLower(exePath);
+    str::ToLowerInPlace(exePath);
     uint32_t hash = MurmurHash2(exePath.Get(), str::Len(exePath) * sizeof(WCHAR));
     ScopedMem<WCHAR> mapId(str::Format(L"SumatraPDF-%08x", hash));
 
@@ -480,7 +475,7 @@ Error:
     goto Retry;
 }
 
-extern void RedirectDllIOToConsole();
+extern "C" void fz_redirect_dll_io_to_console();
 
 // Registering happens either through the Installer or the Options dialog;
 // here we just make sure that we're still registered
@@ -525,7 +520,7 @@ static int RunMessageLoop()
     return (int)msg.wParam;
 }
 
-#ifdef SUPPORTS_AUTO_UPDATE
+#if defined(SUPPORTS_AUTO_UPDATE) || defined(DEBUG)
 static bool RetryIO(const std::function<bool ()>& func, int tries=10)
 {
     while (tries-- > 0) {
@@ -558,7 +553,7 @@ static bool AutoUpdateMain()
     else if (str::StartsWith(argList.At(2), L"cleanup:"))
         otherExe = argList.At(2) + 8;
     if (!str::EndsWithI(otherExe, L".exe") || !file::Exists(otherExe)) {
-        CrashIf(true);
+        // continue startup
         return false;
     }
     RetryIO([&] { return file::Delete(otherExe); });
@@ -575,8 +570,18 @@ static bool AutoUpdateMain()
 }
 #endif
 
-int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
+static void ShutdownCommon() {
+    mui::Destroy();
+    uitask::Destroy();
+    UninstallCrashHandler();
+    dbghelp::FreeCallstackLogs();
+    // output leaks after all destructors of static objects have run
+    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+}
+
+int APIENTRY WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR cmdLine, _In_ int nCmdShow)
 {
+    UNUSED(hPrevInstance); UNUSED(cmdLine); UNUSED(nCmdShow);
     int retCode = 1;    // by default it's error
 
     CrashIf(hInstance != GetInstance());
@@ -590,6 +595,8 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     TryLoadMemTrace();
 #endif
 
+    InitDynCalls();
+
     DisableDataExecution();
     // ensure that C functions behave consistently under all OS locales
     // (use Win32 functions where localized input or output is desired)
@@ -600,18 +607,18 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     SetErrorMode(SEM_NOOPENFILEERRORBOX | SEM_FAILCRITICALERRORS);
 
 #if defined(DEBUG) || defined(SVN_PRE_RELEASE_VER)
-    if (str::StartsWith(lpCmdLine, "/tester")) {
+    if (str::StartsWith(cmdLine, "/tester")) {
         extern int TesterMain(); // in Tester.cpp
         return TesterMain();
     }
 
-    if (str::StartsWith(lpCmdLine, "/regress")) {
+    if (str::StartsWith(cmdLine, "/regress")) {
         extern int RegressMain(); // in Regress.cpp
         return RegressMain();
     }
 #endif
-#ifdef SUPPORTS_AUTO_UPDATE
-    if (str::StartsWith(lpCmdLine, "-autoupdate")) {
+#if defined(SUPPORTS_AUTO_UPDATE) || defined(DEBUG)
+    if (str::StartsWith(cmdLine, "-autoupdate")) {
         bool quit = AutoUpdateMain();
         if (quit)
             return 0;
@@ -620,9 +627,6 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     srand((unsigned int)time(nullptr));
 
-    // load uiautomationcore.dll before installing crash handler (i.e. initializing
-    // dbghelp.dll), so that we get function names/offsets in GetCallstack()
-    uia::Initialize();
 #ifdef DEBUG
     dbghelp::RememberCallstackLogs();
 #endif
@@ -637,12 +641,25 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     CommandLineInfo i;
     i.ParseCommandLine(GetCommandLine());
+
+    if (i.testRenderPage) {
+        TestRenderPage(i);
+        ShutdownCommon();
+        return 0;
+    }
+
+    if (i.testExtractPage) {
+        TestExtractPage(i);
+        ShutdownCommon();
+        return 0;
+    }
+
     InitializePolicies(i.restrictedUse);
     if (i.appdataDir)
         SetAppDataPath(i.appdataDir);
 
     prefs::Load();
-    i.UpdateGlobalPrefs();
+    prefs::UpdateGlobalPrefs(i);
     SetCurrentLang(i.lang ? i.lang : gGlobalPrefs->uiLanguage);
 
     // This allows ad-hoc comparison of gdi, gdi+ and gdi+ quick when used
@@ -656,7 +673,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     if (i.showConsole) {
         RedirectIOToConsole();
-        RedirectDllIOToConsole();
+        fz_redirect_dll_io_to_console();
     }
     if (i.makeDefault)
         AssociateExeWithPdfExtension();
@@ -670,13 +687,12 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     gCrashOnOpen = i.crashOnOpen;
 
     GetFixedPageUiColors(gRenderCache.textColor, gRenderCache.backgroundColor);
-    DebugGdiPlusDevice(gUseGdiRenderer);
 
     if (!RegisterWinClass())
         goto Exit;
 
     CrashIf(hInstance != GetModuleHandle(nullptr));
-    if (!InstanceInit(nCmdShow))
+    if (!InstanceInit())
         goto Exit;
 
     if (i.hwndPluginParent) {
@@ -711,22 +727,19 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         for (size_t n = 0; n < i.fileNames.Count(); n++) {
             OpenUsingDde(hPrevWnd, i.fileNames.At(n), i, 0 == n);
         }
+        if (0 == i.fileNames.Count()) {
+            win::ToForeground(hPrevWnd);
+        }
         goto Exit;
     }
 
     bool restoreSession = false;
     if (gGlobalPrefs->sessionData->Count() > 0 && !gPluginURL) {
-        restoreSession = str::EqI(gGlobalPrefs->restoreSession, "yes") ||
-                         str::EqI(gGlobalPrefs->restoreSession, "true") ||
-#ifndef DISABLE_SESSION_RESTORE
-                         str::EqI(gGlobalPrefs->restoreSession, "auto");
-#else
-                         false;
-#endif
+        restoreSession = gGlobalPrefs->restoreSession;
     }
     if (gGlobalPrefs->reopenOnce->Count() > 0 && !gPluginURL) {
         if (gGlobalPrefs->reopenOnce->Count() == 1 && str::EqI(gGlobalPrefs->reopenOnce->At(0), L"SessionData")) {
-            FreeVecMembers(*gGlobalPrefs->reopenOnce);
+            gGlobalPrefs->reopenOnce->FreeMembers();
             restoreSession = true;
         }
         while (gGlobalPrefs->reopenOnce->Count() > 0) {
@@ -753,9 +766,14 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         }
     }
     ResetSessionState(gGlobalPrefs->sessionData);
+    // prevent the same session from being restored twice
+    if (restoreSession && !(gGlobalPrefs->reuseInstance || gGlobalPrefs->useTabs))
+        prefs::Save();
 
-    for (size_t n = 0; n < i.fileNames.Count(); n++) {
-        win = LoadOnStartup(i.fileNames.At(n), i, !win);
+    for (const WCHAR *filePath : i.fileNames) {
+        if (restoreSession && FindWindowInfoByFile(filePath, true))
+            continue;
+        win = LoadOnStartup(filePath, i, !win);
         if (!win) {
             retCode++;
             continue;
@@ -820,6 +838,7 @@ Exit:
 
 #else
 
+    DeleteCachedCursors();
     DeleteObject(GetDefaultGuiFont());
     DeleteBitmap(gBitmapReloadingCue);
     DeleteSplitterBrush();

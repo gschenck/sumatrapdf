@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -402,6 +402,7 @@ int Pdfsync::DocToSource(UINT pageNo, PointI pt, ScopedMem<WCHAR>& filename, UIN
 // The function returns PDFSYNCERR_SUCCESS if a matching record was found.
 UINT Pdfsync::SourceToRecord(const WCHAR* srcfilename, UINT line, UINT col, Vec<size_t> &records)
 {
+    UNUSED(col);
     if (!srcfilename)
         return PDFSYNCERR_INVALID_ARGUMENT;
 

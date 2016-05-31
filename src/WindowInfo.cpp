@@ -1,12 +1,10 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
 #include "BaseUtil.h"
 #include <UIAutomationCore.h>
 #include <UIAutomationCoreApi.h>
-#include <dwmapi.h>
-#include <vssym32.h>
 #include "FileUtil.h"
 #include "FrameRateWnd.h"
 #include "WinUtil.h"
@@ -172,9 +170,15 @@ void WindowInfo::ChangePresentationMode(PresentationMode mode)
 
 void WindowInfo::Focus()
 {
-    if (IsIconic(hwndFrame))
-        ShowWindow(hwndFrame, SW_RESTORE);
-    SetForegroundWindow(hwndFrame);
+    win::ToForeground(hwndFrame);
+    // set focus to an owned modal dialog if there is one
+    HWND hwnd = nullptr;
+    while ((hwnd = FindWindowEx(HWND_DESKTOP, hwnd, nullptr, nullptr)) != nullptr) {
+        if (GetWindow(hwnd, GW_OWNER) == hwndFrame && (GetWindowStyle(hwnd) & WS_DLGFRAME)) {
+            SetFocus(hwnd);
+            return;
+        }
+    }
     SetFocus(hwndFrame);
 }
 
@@ -312,11 +316,14 @@ void LinkHandler::GotoLink(PageDestination *link)
                 // treat relative URIs as file paths (without fragment identifier)
                 if (hash)
                     *hash = '\0';
+                str::TransChars(path.Get(), L"/", L"\\"); 
+                url::DecodeInPlace(path.Get());
                 // LaunchFile will reject unsupported file types
                 LaunchFile(path, nullptr);
             }
             else {
                 // LaunchBrowser will reject unsupported URI schemes
+                // TODO: support file URIs?
                 LaunchBrowser(path);
             }
         }

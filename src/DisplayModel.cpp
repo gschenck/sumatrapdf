@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 /* How to think of display logic: physical screen of size
@@ -45,6 +45,7 @@
 
 // utils
 #include "BaseUtil.h"
+#include "WinUtil.h"
 // rendering engines
 #include "BaseEngine.h"
 #include "EngineManager.h"
@@ -56,9 +57,6 @@
 #include "PdfSync.h"
 #include "TextSelection.h"
 #include "TextSearch.h"
-
-// Note: adding chm handling to DisplayModel is a hack, because DisplayModel
-// doesn't map to chm features well.
 
 // if true, we pre-render the pages right before and after the visible pages
 static bool gPredictiveRender = true;
@@ -228,16 +226,14 @@ void DisplayModel::SetInitialViewSettings(DisplayMode newDisplayMode, int newSta
 
 void DisplayModel::BuildPagesInfo()
 {
-    assert(!pagesInfo);
+    AssertCrash(!pagesInfo);
     int pageCount = PageCount();
     pagesInfo = AllocArray<PageInfo>(pageCount);
 
-    WCHAR unitSystem[2] = { 0 };
-    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_IMEASURE, unitSystem, dimof(unitSystem));
     RectD defaultRect;
-    if (unitSystem[0] == '0') // metric A4 size
+    if (0 == GetMeasurementSystem())
         defaultRect = RectD(0, 0, 21.0 / 2.54 * engine->GetFileDPI(), 29.7 / 2.54 * engine->GetFileDPI());
-    else // imperial letter size
+    else
         defaultRect = RectD(0, 0, 8.5 * engine->GetFileDPI(), 11 * engine->GetFileDPI());
 
     int columns = ColumnsFromDisplayMode(displayMode);
@@ -712,7 +708,7 @@ int DisplayModel::GetPageNoByPoint(PointI pt)
 
     for (int pageNo = 1; pageNo <= PageCount(); ++pageNo) {
         PageInfo *pageInfo = GetPageInfo(pageNo);
-        assert(0.0 == pageInfo->visibleRatio || pageInfo->shown);
+        AssertCrash(0.0 == pageInfo->visibleRatio || pageInfo->shown);
         if (!pageInfo->shown)
             continue;
 
@@ -733,7 +729,7 @@ int DisplayModel::GetPageNextToPoint(PointI pt)
 
     for (int pageNo = 1; pageNo <= PageCount(); ++pageNo) {
         PageInfo *pageInfo = GetPageInfo(pageNo);
-        assert(0.0 == pageInfo->visibleRatio || pageInfo->shown);
+        AssertCrash(0.0 == pageInfo->visibleRatio || pageInfo->shown);
         if (!pageInfo->shown)
             continue;
 
@@ -754,7 +750,7 @@ int DisplayModel::GetPageNextToPoint(PointI pt)
 PointI DisplayModel::CvtToScreen(int pageNo, PointD pt)
 {
     PageInfo *pageInfo = GetPageInfo(pageNo);
-    assert(pageInfo);
+    CrashIf(!pageInfo);
     if (!pageInfo)
         return PointI();
 
@@ -779,7 +775,7 @@ PointD DisplayModel::CvtFromScreen(PointI pt, int pageNo)
         pageNo = GetPageNextToPoint(pt);
 
     const PageInfo *pageInfo = GetPageInfo(pageNo);
-    assert(pageInfo);
+    CrashIf(!pageInfo);
     if (!pageInfo)
         return PointD();
 
@@ -1001,7 +997,7 @@ void DisplayModel::GoToPage(int pageNo, int scrollY, bool addNavPt, int scrollX)
     RecalcVisibleParts();
     RenderVisibleParts();
     cb->UpdateScrollbars(canvasSize);
-    cb->PageNoChanged(pageNo);
+    cb->PageNoChanged(this, pageNo);
     RepaintDisplay();
 }
 
@@ -1155,7 +1151,7 @@ void DisplayModel::ScrollXTo(int xOff)
     cb->UpdateScrollbars(canvasSize);
 
     if (CurrentPageNo() != currPageNo)
-        cb->PageNoChanged(CurrentPageNo());
+        cb->PageNoChanged(this, CurrentPageNo());
     RepaintDisplay();
 }
 
@@ -1175,7 +1171,7 @@ void DisplayModel::ScrollYTo(int yOff)
 
     int newPageNo = CurrentPageNo();
     if (newPageNo != currPageNo)
-        cb->PageNoChanged(newPageNo);
+        cb->PageNoChanged(this, newPageNo);
     RepaintDisplay();
 }
 
@@ -1229,7 +1225,7 @@ void DisplayModel::ScrollYBy(int dy, bool changePage)
     cb->UpdateScrollbars(canvasSize);
     newPageNo = CurrentPageNo();
     if (newPageNo != currPageNo)
-        cb->PageNoChanged(newPageNo);
+        cb->PageNoChanged(this, newPageNo);
     RepaintDisplay();
 }
 
@@ -1554,10 +1550,11 @@ bool DisplayModel::ShouldCacheRendering(int pageNo)
         return true;
 
     // recommend caching large images (mainly photos) as well, as shrinking
-    // them for every UI update (WM_PAINT) can cause notable lags
-    // TODO: stretching small images even also causes minor lags
-    RectD page = engine->PageMediabox(pageNo);
-    return page.dx * page.dy > 1024 * 1024;
+    // them for every UI update (WM_PAINT) can cause notable lags, and also
+    // for smaller images which are scaled up
+    PageInfo *info = GetPageInfo(pageNo);
+    return info->page.dx * info->page.dy > 1024 * 1024 ||
+           info->pageOnScreen.dx * info->pageOnScreen.dy > 1024 * 1024;
 }
 
 void DisplayModel::ScrollToLink(PageDestination *dest)

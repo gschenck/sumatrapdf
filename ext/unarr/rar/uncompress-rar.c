@@ -1,4 +1,4 @@
-/* Copyright 2014 the unarr project authors (see AUTHORS file).
+/* Copyright 2015 the unarr project authors (see AUTHORS file).
    License: LGPLv3 */
 
 /* adapted from https://code.google.com/p/theunarchiver/source/browse/XADMaster/XADRAR30Handle.m */
@@ -20,8 +20,10 @@ static bool br_fill(ar_archive_rar *rar, int bits)
         count = (int)rar->progress.data_left;
 
     if (bits > rar->uncomp.br.available + 8 * count || ar_read(rar->super.stream, bytes, count) != (size_t)count) {
-        warn("Unexpected EOF during decompression (truncated file?)");
-        rar->uncomp.br.at_eof = true;
+        if (!rar->uncomp.br.at_eof) {
+            warn("Unexpected EOF during decompression (truncated file?)");
+            rar->uncomp.br.at_eof = true;
+        }
         return false;
     }
     rar->progress.data_left -= count;
@@ -45,7 +47,7 @@ static inline uint64_t br_bits(ar_archive_rar *rar, int bits)
 static Byte ByteIn_Read(void *p)
 {
     struct ByteReader *self = p;
-    return br_check(self->rar, 8) ? (Byte)br_bits(self->rar, 8) : 0;
+    return br_check(self->rar, 8) ? (Byte)br_bits(self->rar, 8) : 0xFF;
 }
 
 static void ByteIn_CreateVTable(struct ByteReader *br, ar_archive_rar *rar)

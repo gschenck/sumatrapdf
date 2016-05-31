@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -16,6 +16,7 @@
 #include "GlobalPrefs.h"
 // ui
 #include "SumatraPDF.h"
+#include "ParseCommandLine.h"
 #include "WindowInfo.h"
 #include "AppPrefs.h"
 #include "AppTools.h"
@@ -61,6 +62,14 @@ bool Load()
     ScopedMem<char> prefsData(file::ReadAll(path, nullptr));
     gGlobalPrefs = NewGlobalPrefs(prefsData);
     CrashAlwaysIf(!gGlobalPrefs);
+
+    // in pre-release builds between 3.1.10079 and 3.1.10377,
+    // RestoreSession was a string with the additional option "auto"
+    // TODO: remove this after 3.2 has been released
+#if defined(DEBUG) || defined(SVN_PRE_RELEASE_VER)
+    if (!gGlobalPrefs->restoreSession && prefsData && str::Find(prefsData, "\nRestoreSession = auto"))
+        gGlobalPrefs->restoreSession = true;
+#endif
 
 #ifdef DISABLE_EBOOK_UI
     if (!prefsData || !str::Find(prefsData, "UseFixedPageUI ="))
@@ -132,12 +141,12 @@ bool Save()
     conv::FromZoom(&gGlobalPrefs->defaultZoom, gGlobalPrefs->defaultZoomFloat);
 
     ScopedMem<WCHAR> path(GetSettingsPath());
-    CrashIf(!path);
+    CrashIfDebugOnly(!path);
     if (!path)
         return false;
-    size_t prevPrefsDataSize;
+    size_t prevPrefsDataSize = 0;
     ScopedMem<char> prevPrefsData(file::ReadAll(path, &prevPrefsDataSize));
-    size_t prefsDataSize;
+    size_t prefsDataSize = 0;
     ScopedMem<char> prefsData(SerializeGlobalPrefs(gGlobalPrefs, prevPrefsData, &prefsDataSize));
 
     CrashIf(!prefsData || 0 == prefsDataSize);
@@ -214,6 +223,43 @@ bool Reload()
     UpdateDocumentColors();
 
     return true;
+}
+
+void UpdateGlobalPrefs(const CommandLineInfo& i) {
+    if (i.inverseSearchCmdLine) {
+        str::ReplacePtr(&gGlobalPrefs->inverseSearchCmdLine, i.inverseSearchCmdLine);
+        gGlobalPrefs->enableTeXEnhancements = true;
+    }
+    gGlobalPrefs->fixedPageUI.invertColors = i.invertColors;
+
+    for (size_t n = 0; n <i.globalPrefArgs.Count(); n++) {
+        if (str::EqI(i.globalPrefArgs.At(n), L"-esc-to-exit")) {
+            gGlobalPrefs->escToExit = true;
+        } else if (str::EqI(i.globalPrefArgs.At(n), L"-bgcolor") ||
+                   str::EqI(i.globalPrefArgs.At(n), L"-bg-color")) {
+            // -bgcolor is for backwards compat (was used pre-1.3)
+            // -bg-color is for consistency
+            ParseColor(&gGlobalPrefs->mainWindowBackground, i.globalPrefArgs.At(++n));
+        } else if (str::EqI(i.globalPrefArgs.At(n), L"-set-color-range")) {
+            ParseColor(&gGlobalPrefs->fixedPageUI.textColor, i.globalPrefArgs.At(++n));
+            ParseColor(&gGlobalPrefs->fixedPageUI.backgroundColor, i.globalPrefArgs.At(++n));
+        } else if (str::EqI(i.globalPrefArgs.At(n), L"-fwdsearch-offset")) {
+            gGlobalPrefs->forwardSearch.highlightOffset = _wtoi(i.globalPrefArgs.At(++n));
+            gGlobalPrefs->enableTeXEnhancements = true;
+        } else if (str::EqI(i.globalPrefArgs.At(n), L"-fwdsearch-width")) {
+            gGlobalPrefs->forwardSearch.highlightWidth = _wtoi(i.globalPrefArgs.At(++n));
+            gGlobalPrefs->enableTeXEnhancements = true;
+        } else if (str::EqI(i.globalPrefArgs.At(n), L"-fwdsearch-color")) {
+            ParseColor(&gGlobalPrefs->forwardSearch.highlightColor, i.globalPrefArgs.At(++n));
+            gGlobalPrefs->enableTeXEnhancements = true;
+        } else if (str::EqI(i.globalPrefArgs.At(n), L"-fwdsearch-permanent")) {
+            gGlobalPrefs->forwardSearch.highlightPermanent = _wtoi(i.globalPrefArgs.At(++n));
+            gGlobalPrefs->enableTeXEnhancements = true;
+        } else if (str::EqI(i.globalPrefArgs.At(n), L"-manga-mode")) {
+            const WCHAR *s = i.globalPrefArgs.At(++n);
+            gGlobalPrefs->comicBookUI.cbxMangaMode = str::EqI(L"true", s) || str::Eq(L"1", s);
+        }
+    }
 }
 
 void CleanUp()

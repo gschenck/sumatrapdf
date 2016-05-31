@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 struct  DrawInstr;
@@ -18,7 +18,7 @@ using namespace mui;
 class EbookController : public Controller
 {
 public:
-    EbookController(EbookControls *ctrls, ControllerCallback *cb);
+    EbookController(Doc doc, EbookControls *ctrls, ControllerCallback *cb);
     virtual ~EbookController();
 
     virtual const WCHAR *FilePath() const { return doc.GetFilePath(); }
@@ -33,10 +33,10 @@ public:
 
     virtual void SetDisplayMode(DisplayMode mode, bool keepContinuous=false);
     virtual DisplayMode GetDisplayMode() const { return IsDoublePage() ? DM_FACING : DM_SINGLE_PAGE; }
-    virtual void SetPresentationMode(bool enable) { /* not supported */ }
-    virtual void SetZoomVirtual(float zoom, PointI *fixPt=nullptr) { /* not supported */ }
-    virtual float GetZoomVirtual(bool absolute=false) const { return 100; }
-    virtual float GetNextZoomStep(float towards) const { return 100; }
+    virtual void SetPresentationMode(bool enable) { UNUSED(enable); /* not supported */ }
+    virtual void SetZoomVirtual(float zoom, PointI *fixPt = nullptr) { UNUSED(zoom); UNUSED(fixPt); /* not supported */ }
+    virtual float GetZoomVirtual(bool absolute = false) const { UNUSED(absolute);  return 100; }
+    virtual float GetNextZoomStep(float towards) const { UNUSED(towards);  return 100; }
     virtual void SetViewPortSize(SizeI size);
 
     virtual bool HasTocTree() const { return doc.HasToc(); }
@@ -62,13 +62,15 @@ public:
     void RequestRepaint();
     void HandlePagesFromEbookLayout(EbookFormattingData *ebookLayout);
     void TriggerLayout();
-    void SetDoc(Doc newDoc, int startReparseIdxArg=-1, DisplayMode displayMode=DM_AUTOMATIC);
+    void StartLayouting(int startReparseIdxArg=-1, DisplayMode displayMode=DM_AUTOMATIC);
     int  ResolvePageAnchor(const WCHAR *id);
     void CopyNavHistory(EbookController& orig);
     int  CurrentTocPageNo() const;
 
-    // call SetDoc before using this EbookController
-    static EbookController *Create(HWND hwnd, ControllerCallback *cb, FrameRateWnd *);
+    // call StartLayouting before using this EbookController
+    static EbookController *Create(Doc doc, HWND hwnd, ControllerCallback *cb, FrameRateWnd *);
+
+    static void DeleteEbookFormattingData(EbookFormattingData *data);
 
 protected:
 

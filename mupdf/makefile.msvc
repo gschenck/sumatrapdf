@@ -74,10 +74,6 @@ CFLAGSB = $(CFLAGSB) /D "WIN64" /D "_WIN64"
 !endif
 # WIN32 means any Windows, not just 32-bit Windows
 CFLAGSB = $(CFLAGSB) /D "WIN32" /D "_WIN32"
-# TODO: also add  /D "_USING_V110_SDK71_" for rc ?
-!if "$(WITH_ANALYZE)"!="yes"
-CFLAGSB = $(CFLAGSB) /D "_USING_V110_SDK71_"
-!endif
 
 # /WX  : treat warnings as errors
 # /GR- : disable RTTI
@@ -94,21 +90,20 @@ CFLAGSB = $(CFLAGSB) /WX /GR- /Zi /GS /Gy /GF
 CFLAGSB = $(CFLAGSB) /arch:IA32
 !endif
 
-# /EHs-c- : disable C++ exceptions (generates smaller binaries)
-CFLAGSB = $(CFLAGSB) /EHs-c-
+# /EHs-c- : disable C++ exceptions (generates smaller binaries, requires _HAS_EXCEPTIONS to be 0)
+CFLAGSB = $(CFLAGSB) /EHs-c- /D "_HAS_EXCEPTIONS=0"
 
 # /W4  : bump warnings level from 1 to 4
 CFLAGSB = $(CFLAGSB) /W4
-# warnings unlikely to be turned off due to false positives from using CrashIf()
-# and various logging functions:
-# 4100 : unreferenced param
-# 4127 : conditional expression is constant
-# 4189 : variable initialized but not referenced
-CFLAGSB = $(CFLAGSB) /wd4100 /wd4127 /wd4189
 # warnings that might not make sense to fix:
-# 4428 : universal-character-name encountered in source (prevents using "\u202A" etc.)
 # 4324 : structure was padded due to __declspec(align())
-CFLAGSB = $(CFLAGSB) /wd4428 /wd4324
+CFLAGSB = $(CFLAGSB) /wd4100 /wd4324
+# warnings that happen only in VS2015 (and later)
+# 4458 : declaration of '*' hides class member
+#        (happens rather often all over the place)
+# 4838 : 'conversion from '*' to '*' requires a narrowing conversion
+#        (QITABENT triggers this)
+CFLAGSB = $(CFLAGSB) /wd4458 /wd4838
 
 !if "$(PLATFORM)$(STRICT_X64)"=="X64"
 # disable warnings-as-errors for x64 builds (unless STRICT_X64 is set)
@@ -145,18 +140,18 @@ LDFLAGS=$(LDFLAGS) /SUBSYSTEM:WINDOWS,5.2
 LDFLAGS=$(LDFLAGS) /SUBSYSTEM:WINDOWS,5.1
 !endif
 
-ZLIB_CFLAGS = $(CFLAGSOPT) /TC /wd4131 /wd4244 /wd4996 /I$(ZLIB_DIR)
+ZLIB_CFLAGS = $(CFLAGSOPT) /TC /wd4127 /wd4131 /wd4244 /wd4996 /I$(ZLIB_DIR)
 
 FREETYPE_CFLAGS = $(CFLAGSOPT) /TC /I$(FREETYPE_DIR)/config /I$(FREETYPE_DIR)/include \
-	/D "FT2_BUILD_LIBRARY" /D "FT_OPTION_AUTOFIT2" /wd4244 /wd4703 /wd4996
+	/D "FT2_BUILD_LIBRARY" /D "FT_OPTION_AUTOFIT2" /wd4127 /wd4244 /wd4703 /wd4996
 
 JBIG2_CFLAGS = $(CFLAGS) /TC /D "HAVE_STRING_H=1" /D "JBIG_NO_MEMENTO" /I$(JBIG2_DIR)
-JBIG2_CFLAGS = $(JBIG2_CFLAGS) /wd4018 /wd4244 /wd4701 /wd4996
+JBIG2_CFLAGS = $(JBIG2_CFLAGS) /wd4018 /wd4100 /wd4127 /wd4244 /wd4701 /wd4996
 
-OPENJPEG_CFLAGS = $(CFLAGS) /TC /I$(OPENJPEG_DIR) /wd4244 /wd4996
+OPENJPEG_CFLAGS = $(CFLAGS) /TC /I$(OPENJPEG_DIR) /wd4127 /wd4244 /wd4819 /wd4996
 
 JPEG_TURBO_CFLAGS = $(CFLAGS) /TC /I$(JPEG_TURBO_DIR) /I$(JPEG_TURBO_DIR)\simd
-JPEG_TURBO_CFLAGS = $(JPEG_TURBO_CFLAGS) /wd4018 /wd4101 /wd4244 /wd4245 /wd4996
+JPEG_TURBO_CFLAGS = $(JPEG_TURBO_CFLAGS) /wd4018 /wd4100 /wd4101 /wd4127 /wd4244 /wd4245 /wd4996
 !if "$(PLATFORM)"=="X64"
 JPEG_TURBO_NASM_FLAGS = -D__x86_64__ -DWIN64 -DMSVC -I $(JPEG_TURBO_DIR)\simd\ -I $(JPEG_TURBO_DIR)\win\ -f win64
 !else
@@ -169,22 +164,19 @@ MUPDF_NASM_FLAGS = -D__x86_64__ -DWIN64 -DMSVC -I $(MUPDF_DIR)\ -f win64
 MUPDF_NASM_FLAGS = -I $(MUPDF_DIR)\ -f win32
 !endif
 
-# disable warning C4703: potentially uninitialized local variable (affects VS2012 and later)
 MUPDF_CFLAGS = $(CFLAGS) /TC /I$(MUPDF_DIR)/include /I$(MUPDF_DIR)/generated \
 	/I$(FREETYPE_DIR)/config /I$(FREETYPE_DIR)/include /I$(ZLIB_DIR) \
-	/I$(JBIG2_DIR) /I$(JPEG_TURBO_DIR) /D "SHARE_JPEG" /I$(OPENJPEG_DIR) \
-	/wd4703
+	/I$(JBIG2_DIR) /I$(JPEG_TURBO_DIR) /D "SHARE_JPEG" /I$(OPENJPEG_DIR)
 
 !if "$(CFG)"=="dbg"
 MUPDF_CFLAGS = $(MUPDF_CFLAGS) /D "DEBUG"
 !endif
 
-# Make it easy to compile in a CJK fallback font and/or the Droid substitution fonts
+# Make it easy to compile in a CJK fallback font
 !if "$(WITHCJKFONT)"==""
 MUPDF_CFLAGS = $(MUPDF_CFLAGS) /D "NOCJKFONT"
-!endif
-!if "$(WITHDROIDFONT)"==""
-MUPDF_CFLAGS = $(MUPDF_CFLAGS) /D "NODROIDFONT"
+!else
+MUPDF_CFLAGS = $(MUPDF_CFLAGS) /D "NOCJKFULL"
 !endif
 
 !if "$(PLATFORM)"=="X64"
@@ -197,7 +189,7 @@ JPEG_TURBO_CFLAGS = $(JPEG_TURBO_CFLAGS) /wd4267
 MUPDF_CFLAGS  = $(MUPDF_CFLAGS) /wd4267
 !endif
 
-LIBS = $(LIBS) advapi32.lib kernel32.lib user32.lib gdi32.lib comdlg32.lib shell32.lib gdiplus.lib ole32.lib WindowsCodecs.lib
+LIBS = $(LIBS) advapi32.lib kernel32.lib user32.lib gdi32.lib comdlg32.lib shell32.lib ole32.lib WindowsCodecs.lib
 
 FT_OBJS = \
 	$(OFT)\ftbase.obj $(OFT)\ftbbox.obj $(OFT)\ftbitmap.obj $(OFT)\ftgasp.obj \
@@ -279,8 +271,7 @@ FITZ_OBJS = \
 	$(OFZ)\string.obj $(OFZ)\text.obj $(OFZ)\time.obj \
 	$(OFZ)\trace-device.obj $(OFZ)\transition.obj $(OFZ)\ucdn.obj $(OFZ)\xml.obj \
 	$(OFZ)\glyph.obj $(OFZ)\tree.obj $(OFZ)\document.obj $(OFZ)\filter-leech.obj \
-	$(OFZ)\printf.obj $(OFZ)\strtod.obj $(OFZ)\ftoa.obj $(OFZ)\unzip.obj \
-	$(OFZ)\gdiplus-device.obj
+	$(OFZ)\printf.obj $(OFZ)\strtod.obj $(OFZ)\ftoa.obj $(OFZ)\unzip.obj
 
 MUPDF_OBJS = \
 	$(OP)\pdf-annot.obj $(OP)\pdf-cmap-load.obj $(OP)\pdf-cmap-parse.obj $(OP)\pdf-cmap-table.obj \
@@ -409,9 +400,6 @@ $(MUDRAW_APP): $(MUDRAW_OBJS)
 {$(MUPDF_DIR)\source\fitz}.c{$(OFZ)}.obj::
 	$(CC) $(MUPDF_CFLAGS) /Fo$(OFZ)\ /Fd$(O)\vc80.pdb $<
 
-{$(MUPDF_DIR)\source\fitz}.cpp{$(OFZ)}.obj::
-	$(CC) $(MUPDF_CFLAGS: /TC = ) /Fo$(OFZ)\ /Fd$(O)\vc80.pdb $<
-
 {$(MUPDF_DIR)\source\pdf}.c{$(OP)}.obj::
 	$(CC) $(MUPDF_CFLAGS) /Fo$(OP)\ /Fd$(O)\vc80.pdb $<
 
@@ -441,7 +429,7 @@ $(MUDRAW_APP): $(MUDRAW_OBJS)
 MUPDF_CMAP_TABLES = $(MUPDF_GEN_DIR)\gen_cmap_cns.h $(MUPDF_GEN_DIR)\gen_cmap_gb.h \
 	$(MUPDF_GEN_DIR)\gen_cmap_japan.h $(MUPDF_GEN_DIR)\gen_cmap_korea.h
 
-MUPDF_FONT_FILES = $(MUPDF_GEN_DIR)\gen_font_base14.h $(MUPDF_GEN_DIR)\gen_font_droid.h \
+MUPDF_FONT_FILES = $(MUPDF_GEN_DIR)\gen_font_base14.h \
 	$(MUPDF_GEN_DIR)\gen_font_cjk.h $(MUPDF_GEN_DIR)\gen_font_cjk_full.h
 
 MUPDF_GENERATED =  $(MUPDF_CMAP_TABLES) $(MUPDF_FONT_FILES) $(MUPDF_GEN_DIR)\js_util.h
@@ -488,7 +476,7 @@ $(FITZ_OBJS) $(MUDOC_OBJS): $(FITZ_H)
 $(MUPDF_OBJS): $(FITZ_H) $(MUPDF_H) $(MUPDF_DIR)\source\pdf\pdf-interpret-imp.h
 $(MUXPS_OBJS): $(FITZ_H) $(MUXPS_H)
 $(MUTOOLS_OBJS): $(FITZ_H) $(MUPDF_H) $(MUXPS_H) $(MUOTH_H)
-$(DRAW_OBJS) $(OFZ)\gdiplus-device.obj: $(MUPDF_DIR)\source\fitz\draw-imp.h
+$(DRAW_OBJS): $(MUPDF_DIR)\source\fitz\draw-imp.h
 $(OP)\pdf-encoding.obj: $(MUPDF_DIR)\source\pdf\pdf-encodings.h $(MUPDF_DIR)\source\pdf\pdf-glyphlist.h
 
 force: ;

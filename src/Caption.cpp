@@ -1,10 +1,9 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
 #include "BaseUtil.h"
-#include <dwmapi.h>
-#include <vssym32.h>
+#include "WinDynCalls.h"
 #include "WinUtil.h"
 // layout controllers
 #include "SettingsStructs.h"
@@ -62,7 +61,7 @@ CaptionInfo::CaptionInfo(HWND hwndCaption): hwnd(hwndCaption), theme(nullptr), i
 
 CaptionInfo::~CaptionInfo() {
     if (theme)
-        vss::CloseThemeData(theme);
+        theme::CloseThemeData(theme);
 }
 
 void CaptionInfo::UpdateBackgroundAlpha()
@@ -73,11 +72,11 @@ void CaptionInfo::UpdateBackgroundAlpha()
 void CaptionInfo::UpdateTheme()
 {
     if (theme) {
-        vss::CloseThemeData(theme);
+        theme::CloseThemeData(theme);
         theme = nullptr;
     }
-    if (vss::IsThemeActive())
-        theme = vss::OpenThemeData(hwnd, L"WINDOW");
+    if (theme::IsThemeActive())
+        theme = theme::OpenThemeData(hwnd, L"WINDOW");
 }
 
 void CaptionInfo::UpdateColors(bool activeWindow)
@@ -100,12 +99,12 @@ void CaptionInfo::UpdateColors(bool activeWindow)
             B = BYTE((int)floor(B * factor + 0.5f) + white);
             bgColor = RGB(R, G, B);
     }
-    else if (!theme || !SUCCEEDED(vss::GetThemeColor(theme, WP_CAPTION, 0,
+    else if (!theme || !SUCCEEDED(theme::GetThemeColor(theme, WP_CAPTION, 0,
         activeWindow ? TMT_FILLCOLORHINT : TMT_BORDERCOLORHINT, &bgColor))) {
             bgColor = activeWindow ? GetSysColor(COLOR_GRADIENTACTIVECAPTION)
                                    : GetSysColor(COLOR_GRADIENTINACTIVECAPTION);
     }
-    if (!theme || !SUCCEEDED(vss::GetThemeColor(theme, WP_CAPTION, 0,
+    if (!theme || !SUCCEEDED(theme::GetThemeColor(theme, WP_CAPTION, 0,
         (activeWindow || dwm::IsCompositionEnabled()) ? TMT_CAPTIONTEXT : TMT_INACTIVECAPTIONTEXT, &textColor))) {
             textColor = (activeWindow || dwm::IsCompositionEnabled()) ? GetSysColor(COLOR_CAPTIONTEXT)
                                                                       : GetSysColor(COLOR_INACTIVECAPTIONTEXT);
@@ -271,8 +270,8 @@ void CreateCaption(WindowInfo *win)
 
     win->caption = new CaptionInfo(win->hwndCaption);
 
-    for (int i = CB_BTN_FIRST; i < CB_BTN_COUNT; i++) {
-        HWND btn = CreateWindow(L"BUTTON", L"", WS_CHILDWINDOW | WS_VISIBLE | BS_OWNERDRAW,
+    for (UINT_PTR i = CB_BTN_FIRST; i < CB_BTN_COUNT; i++) {
+        HWND btn = CreateWindowExW(0, L"BUTTON", L"", WS_CHILDWINDOW | WS_VISIBLE | BS_OWNERDRAW,
             0, 0, 0, 0, win->hwndCaption, (HMENU)(BTN_ID_FIRST + i), GetModuleHandle(nullptr), nullptr);
 
         if (!DefWndProcButton)
@@ -300,8 +299,9 @@ void RelayoutCaption(WindowInfo *win)
 
     if (dwm::IsCompositionEnabled()) {
         // hide the buttons, because DWM paints and serves them, when the composition is enabled
-        for (int i = CB_MINIMIZE; i <= CB_CLOSE; i++)
+        for (int i = CB_MINIMIZE; i <= CB_CLOSE; i++) {
             ShowWindow(ci->btn[i].hwnd, SW_HIDE);
+        }
     }
     else {
         int xEdge = GetSystemMetrics(SM_CXEDGE);
@@ -409,12 +409,12 @@ static void DrawCaptionButton(DRAWITEMSTRUCT *item, WindowInfo *win)
 
     // draw system button
     if (partId) {
-        if (rc != rButton || vss::IsThemeBackgroundPartiallyTransparent(win->caption->theme, partId, stateId))
+        if (rc != rButton || theme::IsThemeBackgroundPartiallyTransparent(win->caption->theme, partId, stateId))
             PaintCaptionBackground(memDC, win, false);
 
         RECT r = rc.ToRECT();
         if (win->caption->theme)
-            vss::DrawThemeBackground(win->caption->theme, memDC, partId, stateId, &r, nullptr);
+            theme::DrawThemeBackground(win->caption->theme, memDC, partId, stateId, &r, nullptr);
         else
             DrawFrameControl(memDC, &r, DFC_CAPTION, state);
     }
@@ -771,7 +771,7 @@ static void MenuBarAsPopupMenu(WindowInfo *win, int x, int y)
         return;
     HMENU popup = CreatePopupMenu();
 
-    MENUITEMINFO mii;
+    MENUITEMINFO mii = { 0 };
     mii.cbSize = sizeof(MENUITEMINFO);
     mii.fMask = MIIM_SUBMENU | MIIM_STRING;
     for (int i = 0; i < count; i++) {
@@ -792,158 +792,10 @@ static void MenuBarAsPopupMenu(WindowInfo *win, int x, int y)
         x += ClientRect(win->caption->btn[CB_MENU].hwnd).dx;
     TrackPopupMenu(popup, TPM_LEFTALIGN, x, y, 0, win->hwndFrame, nullptr);
 
-    while (--count >= 0)
+    while (count > 0) {
+        --count;
         RemoveMenu(popup, count, MF_BYPOSITION);
+    }
     DestroyMenu(popup);
 }
 
-typedef HTHEME (WINAPI *OpenThemeDataProc)(HWND hwnd, LPCWSTR pszClassList);
-typedef HRESULT (WINAPI *CloseThemeDataProc)(HTHEME hTheme);
-typedef HRESULT (WINAPI *DrawThemeBackgroundProc)(HTHEME hTheme, HDC hdc, int iPartId, int iStateId, LPCRECT pRect, LPCRECT pClipRect);
-typedef BOOL (WINAPI *IsThemeActiveProc)(VOID);
-typedef BOOL (WINAPI *IsThemeBackgroundPartiallyTransparentProc)(HTHEME hTheme, int iPartId, int iStateId);
-typedef HRESULT (WINAPI *GetThemeColorProc)(HTHEME hTheme, int iPartId, int iStateId, int iPropId, COLORREF *pColor);
-
-namespace vss {
-
-static bool gFuncsLoaded = false;
-static OpenThemeDataProc _OpenThemeData = nullptr;
-static CloseThemeDataProc _CloseThemeData = nullptr;
-static DrawThemeBackgroundProc _DrawThemeBackground = nullptr;
-static IsThemeActiveProc _IsThemeActive = nullptr;
-static IsThemeBackgroundPartiallyTransparentProc _IsThemeBackgroundPartiallyTransparent = nullptr;
-static GetThemeColorProc _GetThemeColor = nullptr;
-
-void Initialize()
-{
-    if (gFuncsLoaded)
-        return;
-
-    HMODULE h = SafeLoadLibrary(L"UxTheme.dll");
-#define Load(func) _ ## func = (func ## Proc)GetProcAddress(h, #func)
-    Load(OpenThemeData);
-    Load(CloseThemeData);
-    Load(DrawThemeBackground);
-    Load(IsThemeActive);
-    Load(IsThemeBackgroundPartiallyTransparent);
-    Load(GetThemeColor);
-#undef Load
-
-    gFuncsLoaded = true;
-}
-
-HTHEME OpenThemeData(HWND hwnd, LPCWSTR pszClassList)
-{
-    Initialize();
-    if (!_OpenThemeData)
-        return nullptr;
-    return _OpenThemeData(hwnd, pszClassList);
-}
-
-HRESULT CloseThemeData(HTHEME hTheme)
-{
-    Initialize();
-    if (!_CloseThemeData)
-        return E_NOTIMPL;
-    return _CloseThemeData(hTheme);
-}
-
-HRESULT DrawThemeBackground(HTHEME hTheme, HDC hdc, int iPartId, int iStateId, LPCRECT pRect, LPCRECT pClipRect)
-{
-    Initialize();
-    if (!_DrawThemeBackground)
-        return E_NOTIMPL;
-    return _DrawThemeBackground(hTheme, hdc, iPartId, iStateId, pRect, pClipRect);
-}
-
-BOOL IsThemeActive()
-{
-    Initialize();
-    if (!_IsThemeActive)
-        return FALSE;
-    return _IsThemeActive();
-}
-
-BOOL IsThemeBackgroundPartiallyTransparent(HTHEME hTheme, int iPartId, int iStateId)
-{
-    Initialize();
-    if (!_IsThemeBackgroundPartiallyTransparent)
-        return FALSE;
-    return _IsThemeBackgroundPartiallyTransparent(hTheme, iPartId, iStateId);
-}
-
-HRESULT GetThemeColor(HTHEME hTheme, int iPartId, int iStateId, int iPropId, COLORREF *pColor)
-{
-    Initialize();
-    if (!_GetThemeColor)
-        return E_NOTIMPL;
-    return _GetThemeColor(hTheme, iPartId, iStateId, iPropId, pColor);
-}
-
-};
-
-typedef HRESULT (WINAPI *DwmIsCompositionEnabledProc)(BOOL *pfEnabled);
-typedef HRESULT (WINAPI *DwmExtendFrameIntoClientAreaProc)(HWND hwnd, const MARGINS *pMarInset);
-typedef BOOL (WINAPI *DwmDefWindowProcProc)(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, LRESULT *plResult);
-typedef HRESULT (WINAPI *DwmGetWindowAttributeProc)(HWND hwnd, DWORD dwAttribute, void *pvAttribute, DWORD cbAttribute);
-
-namespace dwm {
-
-static bool gFuncsLoaded = false;
-static DwmIsCompositionEnabledProc _DwmIsCompositionEnabled = nullptr;
-static DwmExtendFrameIntoClientAreaProc _DwmExtendFrameIntoClientArea = nullptr;
-static DwmDefWindowProcProc _DwmDefWindowProc = nullptr;
-static DwmGetWindowAttributeProc _DwmGetWindowAttribute = nullptr;
-
-void Initialize()
-{
-    if (gFuncsLoaded)
-        return;
-
-    HMODULE h = SafeLoadLibrary(L"Dwmapi.dll");
-#define Load(func) _ ## func = (func ## Proc)GetProcAddress(h, #func)
-    Load(DwmIsCompositionEnabled);
-    Load(DwmExtendFrameIntoClientArea);
-    Load(DwmDefWindowProc);
-    Load(DwmGetWindowAttribute);
-#undef Load
-
-    gFuncsLoaded = true;
-}
-
-BOOL IsCompositionEnabled()
-{
-    Initialize();
-    if (!_DwmIsCompositionEnabled)
-        return FALSE;
-    BOOL isEnabled;
-    if (SUCCEEDED(_DwmIsCompositionEnabled(&isEnabled)))
-        return isEnabled;
-    return FALSE;
-}
-
-HRESULT ExtendFrameIntoClientArea(HWND hwnd, const MARGINS *pMarInset)
-{
-    Initialize();
-    if (!_DwmExtendFrameIntoClientArea)
-        return E_NOTIMPL;
-    return _DwmExtendFrameIntoClientArea(hwnd, pMarInset);
-}
-
-BOOL DefWindowProc_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, LRESULT *plResult)
-{
-    Initialize();
-    if (!_DwmDefWindowProc)
-        return FALSE;
-    return _DwmDefWindowProc(hwnd, msg, wParam, lParam, plResult);
-}
-
-HRESULT GetWindowAttribute(HWND hwnd, DWORD dwAttribute, void *pvAttribute, DWORD cbAttribute)
-{
-    Initialize();
-    if (!_DwmGetWindowAttribute)
-        return E_NOTIMPL;
-    return _DwmGetWindowAttribute(hwnd, dwAttribute, pvAttribute, cbAttribute);
-}
-
-};

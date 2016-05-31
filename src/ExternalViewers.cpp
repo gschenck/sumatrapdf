@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -261,7 +261,7 @@ bool CanViewWithHtmlHelp(TabInfo *tab)
     if (!tab || !CanViewExternally(tab))
         return false;
     // allow viewing with HTML Help, if either an CHM document is loaded...
-    if (tab->ctrl && tab->GetEngineType() != Engine_Chm2 && !tab->AsChm())
+    if (tab->ctrl && tab->GetEngineType() != Engine_Chm && !tab->AsChm())
         return false;
     // or a file ending in .chm has failed to be loaded
     if (!tab->ctrl && !str::EndsWithI(tab->filePath, L".chm"))

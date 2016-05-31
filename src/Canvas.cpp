@@ -1,17 +1,13 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
 #include "BaseUtil.h"
-#include <dwmapi.h>
-#include <vssym32.h>
-#include <UIAutomationCore.h>
-#include <UIAutomationCoreApi.h>
+#include "WinDynCalls.h"
 #include "Dpi.h"
 #include "FileUtil.h"
 #include "FrameRateWnd.h"
 #include "Timer.h"
-#include "Touch.h"
 #include "UITask.h"
 #include "WinUtil.h"
 // rendering engines
@@ -81,7 +77,8 @@ static void OnVScroll(WindowInfo& win, WPARAM wParam)
     if (!IsContinuous(win.ctrl->GetDisplayMode()) && ZOOM_FIT_PAGE == win.ctrl->GetZoomVirtual())
         lineHeight = 1;
 
-    switch (LOWORD(wParam)) {
+    USHORT message = LOWORD(wParam);
+    switch (message) {
     case SB_TOP:        si.nPos = si.nMin; break;
     case SB_BOTTOM:     si.nPos = si.nMax; break;
     case SB_LINEUP:     si.nPos -= lineHeight; break;
@@ -99,8 +96,9 @@ static void OnVScroll(WindowInfo& win, WPARAM wParam)
     SetScrollInfo(win.hwndCanvas, SB_VERT, &si, TRUE);
     GetScrollInfo(win.hwndCanvas, SB_VERT, &si);
 
-    // If the position has changed, scroll the window and update it
-    if (si.nPos != iVertPos)
+    // If the position has changed or we're dealing with a touchpad scroll event, 
+    // scroll the window and update it
+    if (si.nPos != iVertPos || message == SB_THUMBTRACK)
         win.AsFixed()->ScrollYTo(si.nPos);
 }
 
@@ -113,8 +111,9 @@ static void OnHScroll(WindowInfo& win, WPARAM wParam)
     si.fMask  = SIF_ALL;
     GetScrollInfo(win.hwndCanvas, SB_HORZ, &si);
 
-    int iVertPos = si.nPos;
-    switch (LOWORD(wParam)) {
+    int iHorzPos = si.nPos;
+    USHORT message = LOWORD(wParam);
+    switch (message) {
     case SB_LEFT:       si.nPos = si.nMin; break;
     case SB_RIGHT:      si.nPos = si.nMax; break;
     case SB_LINELEFT:   si.nPos -= 16; break;
@@ -130,8 +129,9 @@ static void OnHScroll(WindowInfo& win, WPARAM wParam)
     SetScrollInfo(win.hwndCanvas, SB_HORZ, &si, TRUE);
     GetScrollInfo(win.hwndCanvas, SB_HORZ, &si);
 
-    // If the position has changed, scroll the window and update it
-    if (si.nPos != iVertPos)
+    // If the position has changed or we're dealing with a touchpad scroll event, 
+    // scroll the window and update it
+    if (si.nPos != iHorzPos || message == SB_THUMBTRACK)
         win.AsFixed()->ScrollXTo(si.nPos);
 }
 
@@ -162,6 +162,7 @@ static void OnDraggingStop(WindowInfo& win, int x, int y, bool aborted)
 
 static void OnMouseMove(WindowInfo& win, int x, int y, WPARAM flags)
 {
+    UNUSED(flags);
     AssertCrash(win.AsFixed());
 
     if (win.presentation) {
@@ -297,8 +298,6 @@ static void OnMouseLeftButtonUp(WindowInfo& win, int x, int y, WPARAM key)
     /* follow an active link */
     else if (link && link->GetRect().Contains(ptPage)) {
         PageDestination *dest = link->AsLink();
-        win.linkHandler->GotoLink(dest);
-        SetCursor(IDC_ARROW);
         // highlight the clicked link (as a reminder of the last action once the user returns)
         if (dest && (Dest_LaunchURL == dest->GetDestType() || Dest_LaunchFile == dest->GetDestType())) {
             DeleteOldSelectionInfo(&win, true);
@@ -306,6 +305,8 @@ static void OnMouseLeftButtonUp(WindowInfo& win, int x, int y, WPARAM key)
             win.showSelection = win.currentTab->selectionOnPage != nullptr;
             win.RepaintAsync();
         }
+        SetCursor(IDC_ARROW);
+        win.linkHandler->GotoLink(dest);
     }
     /* if we had a selection and this was just a click, hide the selection */
     else if (win.showSelection)
@@ -374,6 +375,7 @@ static void OnMouseLeftButtonDblClk(WindowInfo& win, int x, int y, WPARAM key)
 static void OnMouseMiddleButtonDown(WindowInfo& win, int x, int y, WPARAM key)
 {
     // Handle message by recording placement then moving document as mouse moves.
+    UNUSED(key);
 
     switch (win.mouseAction) {
     case MA_IDLE:
@@ -393,6 +395,7 @@ static void OnMouseMiddleButtonDown(WindowInfo& win, int x, int y, WPARAM key)
 
 static void OnMouseRightButtonDown(WindowInfo& win, int x, int y, WPARAM key)
 {
+    UNUSED(key);
     //lf("Right button clicked on %d %d", x, y);
     if (MA_SCROLLING == win.mouseAction)
         win.mouseAction = MA_IDLE;
@@ -487,10 +490,11 @@ static void PaintPageFrameAndShadow(HDC hdc, RectI& bounds, RectI& pageRect, boo
 #else
 static void PaintPageFrameAndShadow(HDC hdc, RectI& bounds, RectI& pageRect, bool presentation)
 {
-    ScopedGdiObj<HPEN> pe(CreatePen(PS_NULL, 0, 0));
-    ScopedGdiObj<HBRUSH> brush(CreateSolidBrush(gRenderCache.backgroundColor));
-    SelectObject(hdc, pe);
-    SelectObject(hdc, brush);
+    UNUSED(pageRect);  UNUSED(presentation);
+    ScopedPen pen(CreatePen(PS_NULL, 0, 0));
+    ScopedBrush brush(CreateSolidBrush(gRenderCache.backgroundColor));
+    ScopedHdcSelect restorePen(hdc, pen);
+    ScopedHdcSelect restoreBrush(hdc, brush);
     Rectangle(hdc, bounds.x, bounds.y, bounds.x + bounds.dx + 1, bounds.y + bounds.dy + 1);
 }
 #endif
@@ -633,12 +637,7 @@ static void DrawDocument(WindowInfo& win, HDC hdc, RECT *rcArea)
             PaintPageFrameAndShadow(hdc, bounds, pageInfo->pageOnScreen, win.presentation);
 
         bool renderOutOfDateCue = false;
-        UINT renderDelay = 0;
-        if (!dm->ShouldCacheRendering(pageNo)) {
-            dm->GetEngine()->RenderPage(hdc, pageInfo->pageOnScreen, pageNo, dm->GetZoomReal(pageNo), dm->GetRotation());
-        }
-        else
-            renderDelay = gRenderCache.Paint(hdc, bounds, dm, pageNo, pageInfo, &renderOutOfDateCue);
+        UINT renderDelay = gRenderCache.Paint(hdc, bounds, dm, pageNo, pageInfo, &renderOutOfDateCue);
 
         if (renderDelay) {
             ScopedFont fontRightTxt(CreateSimpleFont(hdc, L"MS Shell Dlg", 14));
@@ -824,6 +823,13 @@ static LRESULT CanvasOnMouseWheel(WindowInfo& win, UINT message, WPARAM wParam, 
             win.AsFixed()->ScrollYBy(-MulDiv(si.nPage, delta, WHEEL_DELTA), true);
         return 0;
     }
+    
+   // added: shift while scrolling will scroll by half a page per tick
+   //        really usefull for browsing long files
+	if ((LOWORD(wParam) & MK_SHIFT) || IsShiftPressed()) {
+		SendMessage(win.hwndCanvas, WM_VSCROLL, (delta>0) ? SB_HPAGEUP : SB_HPAGEDOWN, 0);
+		return 0;
+	}
 
     win.wheelAccumDelta += delta;
     int currentScrollPos = GetScrollPos(win.hwndCanvas, SB_VERT);
@@ -884,16 +890,16 @@ static LRESULT CanvasOnMouseHWheel(WindowInfo& win, UINT message, WPARAM wParam,
 
 static LRESULT OnGesture(WindowInfo& win, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    if (!Touch::SupportsGestures())
+    if (!touch::SupportsGestures())
         return DefWindowProc(win.hwndFrame, message, wParam, lParam);
 
     HGESTUREINFO hgi = (HGESTUREINFO)lParam;
     GESTUREINFO gi = { 0 };
     gi.cbSize = sizeof(GESTUREINFO);
 
-    BOOL ok = Touch::GetGestureInfo(hgi, &gi);
+    BOOL ok = touch::GetGestureInfo(hgi, &gi);
     if (!ok) {
-        Touch::CloseGestureInfoHandle(hgi);
+        touch::CloseGestureInfoHandle(hgi);
         return 0;
     }
 
@@ -975,7 +981,7 @@ static LRESULT OnGesture(WindowInfo& win, UINT message, WPARAM wParam, LPARAM lP
             break;
     }
 
-    Touch::CloseGestureInfoHandle(hgi);
+    touch::CloseGestureInfoHandle(hgi);
     return 0;
 }
 
@@ -1068,16 +1074,20 @@ static LRESULT WndProcCanvasChmUI(WindowInfo& win, HWND hwnd, UINT msg, WPARAM w
 
 ///// methods needed for EbookUI canvases /////
 
-static LRESULT CanvasOnMouseWheelEbook(WindowInfo& win, UINT message, WPARAM wParam, LPARAM lParam)
+// NO_INLINE to help in debugging https://github.com/sumatrapdfreader/sumatrapdf/issues/292
+static NO_INLINE LRESULT CanvasOnMouseWheelEbook(WindowInfo& win, UINT message, WPARAM wParam, LPARAM lParam)
 {
     // Scroll the ToC sidebar, if it's visible and the cursor is in it
-    if (win.tocVisible && IsCursorOverWindow(win.hwndTocTree) && !gWheelMsgRedirect) {
+    if (win.tocVisible && IsCursorOverWindow(win.hwndTocTree)) {
         // Note: hwndTocTree's window procedure doesn't always handle
         //       WM_MOUSEWHEEL and when it's bubbling up, we'd return
         //       here recursively - prevent that
-        gWheelMsgRedirect = true;
-        LRESULT res = SendMessage(win.hwndTocTree, message, wParam, lParam);
-        gWheelMsgRedirect = false;
+        LRESULT res = 0;
+        if (!gWheelMsgRedirect) {
+            gWheelMsgRedirect = true;
+            res = SendMessage(win.hwndTocTree, message, wParam, lParam);
+            gWheelMsgRedirect = false;
+        }
         return res;
     }
 
@@ -1103,6 +1113,7 @@ static LRESULT WndProcCanvasEbookUI(WindowInfo& win, HWND hwnd, UINT msg, WPARAM
         return DefWindowProc(hwnd, msg, wParam, lParam);
 
     case WM_MOUSEWHEEL:
+    case WM_MOUSEHWHEEL:
         return CanvasOnMouseWheelEbook(win, msg, wParam, lParam);
 
     case WM_GESTURE:
@@ -1136,6 +1147,7 @@ static void OnPaintAbout(WindowInfo& win)
 
 static void OnMouseLeftButtonDownAbout(WindowInfo& win, int x, int y, WPARAM key)
 {
+    UNUSED(key);
     //lf("Left button clicked on %d %d", x, y);
 
     // remember a link under so that on mouse up we only activate
@@ -1145,6 +1157,7 @@ static void OnMouseLeftButtonDownAbout(WindowInfo& win, int x, int y, WPARAM key
 
 static void OnMouseLeftButtonUpAbout(WindowInfo& win, int x, int y, WPARAM key)
 {
+    UNUSED(key);
     SetFocus(win.hwndFrame);
 
     const WCHAR *url = GetStaticLink(win.staticLinks, x, y);
@@ -1171,6 +1184,7 @@ static void OnMouseLeftButtonUpAbout(WindowInfo& win, int x, int y, WPARAM key)
 
 static void OnMouseRightButtonDownAbout(WindowInfo& win, int x, int y, WPARAM key)
 {
+    UNUSED(key);
     //lf("Right button clicked on %d %d", x, y);
     SetFocus(win.hwndFrame);
     win.dragStart = PointI(x, y);
@@ -1178,6 +1192,7 @@ static void OnMouseRightButtonDownAbout(WindowInfo& win, int x, int y, WPARAM ke
 
 static void OnMouseRightButtonUpAbout(WindowInfo& win, int x, int y, WPARAM key)
 {
+    UNUSED(key);
     bool didDragMouse =
         abs(x - win.dragStart.x) > GetSystemMetrics(SM_CXDRAG) ||
         abs(y - win.dragStart.y) > GetSystemMetrics(SM_CYDRAG);

@@ -1,13 +1,10 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
 #include "BaseUtil.h"
 #include <wininet.h>
-#include <dwmapi.h>
-#include <vssym32.h>
-#include <UIAutomationCore.h>
-#include <UIAutomationCoreApi.h>
+#include "WinDynCalls.h"
 #include "CryptoUtil.h"
 #include "DirIter.h"
 #include "Dpi.h"
@@ -22,12 +19,10 @@
 #include "SplitterWnd.h"
 #include "SquareTreeParser.h"
 #include "ThreadUtil.h"
-#include "Touch.h"
 #include "UITask.h"
 #include "WinUtil.h"
 // rendering engines
 #include "BaseEngine.h"
-#include "PdfEngine.h"
 #include "PsEngine.h"
 #include "EngineManager.h"
 #include "Doc.h"
@@ -50,6 +45,7 @@
 #include "WindowInfo.h"
 #include "TabInfo.h"
 #include "resource.h"
+#include "ParseCommandLine.h"
 #include "AppPrefs.h"
 #include "AppTools.h"
 #include "AppUtil.h"
@@ -94,11 +90,6 @@ bool             gShowFrameRate = true;
 #else
 bool             gShowFrameRate = false;
 #endif
-
-/* if true, we're rendering everything with the GDI+ back-end,
-   otherwise Fitz/MuPDF is used at least for screen rendering.
-   In Debug builds, you can switch between the two through the Debug menu */
-bool             gUseGdiRenderer = false;
 
 // in plugin mode, the window's frame isn't drawn and closing and
 // fullscreen are disabled, so that SumatraPDF can be displayed
@@ -157,9 +148,9 @@ void SetCurrentLang(const char *langCode)
 
 #ifndef SUMATRA_UPDATE_INFO_URL
 #ifdef SVN_PRE_RELEASE_VER
-#define SUMATRA_UPDATE_INFO_URL L"http://kjkpub.s3.amazonaws.com/sumatrapdf/sumpdf-prerelease-update.txt"
+#define SUMATRA_UPDATE_INFO_URL L"https://kjkpub.s3.amazonaws.com/sumatrapdf/sumpdf-prerelease-update.txt"
 #else
-#define SUMATRA_UPDATE_INFO_URL L"http://kjkpub.s3.amazonaws.com/sumatrapdf/sumpdf-update.txt"
+#define SUMATRA_UPDATE_INFO_URL L"https://kjkpub.s3.amazonaws.com/sumatrapdf/sumpdf-update.txt"
 #endif
 #endif
 
@@ -231,13 +222,13 @@ void InitializePolicies(bool restrict)
         const char *value;
         if ((value = polsec->GetValue("LinkProtocols")) != nullptr) {
             ScopedMem<WCHAR> protocols(str::conv::FromUtf8(value));
-            str::ToLower(protocols);
+            str::ToLowerInPlace(protocols);
             str::TransChars(protocols, L":; ", L",,,");
             gAllowedLinkProtocols.Split(protocols, L",", true);
         }
         if ((value = polsec->GetValue("SafeFileTypes")) != nullptr) {
             ScopedMem<WCHAR> protocols(str::conv::FromUtf8(value));
-            str::ToLower(protocols);
+            str::ToLowerInPlace(protocols);
             str::TransChars(protocols, L":; ", L",,,");
             gAllowedFileTypes.Split(protocols, L",", true);
         }
@@ -279,7 +270,7 @@ bool LaunchBrowser(const WCHAR *url)
     ScopedMem<WCHAR> protocol;
     if (!str::Parse(url, L"%S:", &protocol))
         return false;
-    str::ToLower(protocol);
+    str::ToLowerInPlace(protocol);
     if (!gAllowedLinkProtocols.Contains(protocol))
         return false;
 
@@ -299,7 +290,7 @@ bool OpenFileExternally(const WCHAR *path)
     // since we allow following hyperlinks, also allow opening local webpages
     if (str::EndsWithI(path, L".htm") || str::EndsWithI(path, L".html") || str::EndsWithI(path, L".xhtml"))
         perceivedType.Set(str::Dup(L"webpage"));
-    str::ToLower(perceivedType);
+    str::ToLowerInPlace(perceivedType);
     if (gAllowedFileTypes.Contains(L"*"))
         /* allow all file types (not recommended) */;
     else if (!perceivedType || !gAllowedFileTypes.Contains(perceivedType))
@@ -402,6 +393,13 @@ WindowInfo *FindWindowInfoByTab(TabInfo *tab)
     return gWindows.FindEl([&](WindowInfo *win) { return win->tabs.Contains(tab); });
 }
 
+WindowInfo *FindWindowInfoByController(Controller *ctrl)
+{
+    return gWindows.FindEl([&](WindowInfo *win) {
+        return win->tabs.FindEl([&](TabInfo *tab) { return tab->ctrl == ctrl; }) != NULL;
+    });
+}
+
 class HwndPasswordUI : public PasswordUI
 {
     HWND hwnd;
@@ -445,11 +443,16 @@ WCHAR *HwndPasswordUI::GetPassword(const WCHAR *fileName, unsigned char *fileDig
         if (urlName)
             fileName = urlName;
     }
-
     fileName = path::GetBaseName(fileName);
+
     // check if the window is still valid as it might have been closed by now
-    if (!IsWindow(hwnd))
+    if (!IsWindow(hwnd)) {
+        CrashIf(true);
         hwnd = GetForegroundWindow();
+    }
+    // make sure that the password dialog is visible
+    win::ToForeground(hwnd);
+
     bool *rememberPwd = gGlobalPrefs->rememberOpenedFiles ? saveKey : nullptr;
     return Dialog_GetPassword(hwnd, fileName, rememberPwd);
 }
@@ -553,7 +556,7 @@ static void UpdateWindowRtlLayout(WindowInfo *win)
     if (tocVisible || favVisible)
         SetSidebarVisibility(win, false, false);
 
-    // cf. http://www.microsoft.com/middleeast/msdn/mirror.aspx
+    // cf. https://www.microsoft.com/middleeast/msdn/mirror.aspx
     ToggleWindowStyle(win->hwndFrame, WS_EX_LAYOUTRTL | WS_EX_NOINHERITLAYOUT, isRTL, GWL_EXSTYLE);
 
     ToggleWindowStyle(win->hwndTocBox, WS_EX_LAYOUTRTL | WS_EX_NOINHERITLAYOUT, isRTL, GWL_EXSTYLE);
@@ -646,7 +649,7 @@ public:
     virtual ~ControllerCallbackHandler() { }
 
     virtual void Repaint() { win->RepaintAsync(); }
-    virtual void PageNoChanged(int pageNo);
+    virtual void PageNoChanged(Controller *ctrl, int pageNo);
     virtual void UpdateScrollbars(SizeI canvas);
     virtual void RequestRendering(int pageNo);
     virtual void CleanUp(DisplayModel *dm);
@@ -738,10 +741,13 @@ void ControllerCallbackHandler::SaveDownload(const WCHAR *url, const unsigned ch
 
 void ControllerCallbackHandler::HandleLayoutedPages(EbookController *ctrl, EbookFormattingData *data)
 {
-    TabInfo *tdata = win->tabs.FindEl([&](TabInfo *tab) { return ctrl == tab->ctrl; });
     uitask::Post([=]{
-        if (FindWindowInfoByTab(tdata) && tdata->ctrl == ctrl) {
+        if (FindWindowInfoByController(ctrl)) {
             ctrl->HandlePagesFromEbookLayout(data);
+        }
+        else {
+            // don't leak data if ctrl has already been deleted
+            EbookController::DeleteEbookFormattingData(data);
         }
     });
 }
@@ -798,8 +804,13 @@ void ControllerCallbackHandler::UpdateScrollbars(SizeI canvas)
 }
 
 // The current page edit box is updated with the current page number
-void ControllerCallbackHandler::PageNoChanged(int pageNo)
+void ControllerCallbackHandler::PageNoChanged(Controller *ctrl, int pageNo)
 {
+    // discard page number change requests from documents
+    // loaded asynchronously in a background tab
+    if (win->ctrl != ctrl)
+        return;
+
     AssertCrash(win->ctrl && win->ctrl->PageCount() > 0);
     if (!win->ctrl || win->ctrl->PageCount() == 0)
         return;
@@ -826,7 +837,7 @@ void ControllerCallbackHandler::PageNoChanged(int pageNo)
     }
 }
 
-static Controller *CreateControllerForFile(const WCHAR *filePath, PasswordUI *pwdUI, WindowInfo *win, DisplayMode displayMode, int reparseIdx=0)
+static Controller *CreateControllerForFile(const WCHAR *filePath, PasswordUI *pwdUI, WindowInfo *win)
 {
     if (!win->cbHandler)
         win->cbHandler = new ControllerCallbackHandler(win);
@@ -843,7 +854,7 @@ LoadEngineInFixedPageUI:
         ctrl = new DisplayModel(engine, engineType, win->cbHandler);
         CrashIf(!ctrl || !ctrl->AsFixed() || ctrl->AsChm() || ctrl->AsEbook());
     }
-    else if (ChmModel::IsSupportedFile(filePath)) {
+    else if (ChmModel::IsSupportedFile(filePath) && !gGlobalPrefs->chmUI.useFixedPageUI) {
         ChmModel *chmModel = ChmModel::Create(filePath, win->cbHandler);
         if (chmModel) {
             // make sure that MSHTML can't be used as a potential exploit
@@ -852,27 +863,25 @@ LoadEngineInFixedPageUI:
             // loading one nonetheless); note: this crash should never happen,
             // since gGlobalPrefs->chmUI.useFixedPageUI is set in SetupPluginMode
             CrashAlwaysIf(gPluginMode);
-            // if CLSID_WebBrowser isn't available, fall back on Chm2Engine
+            // if CLSID_WebBrowser isn't available, fall back on ChmEngine
             if (!chmModel->SetParentHwnd(win->hwndCanvas)) {
                 delete chmModel;
-                engine = EngineManager::CreateEngine(filePath, pwdUI, &engineType);
-                CrashIf(engineType != (engine ? Engine_Chm2 : Engine_None));
+                engine = EngineManager::CreateEngine(filePath, pwdUI, &engineType, true);
+                CrashIf(engineType != Engine_Chm);
+                if (!engine)
+                    return nullptr;
                 goto LoadEngineInFixedPageUI;
             }
+            // another ChmModel might still be active
+            chmModel->RemoveParentHwnd();
             ctrl = chmModel;
         }
         CrashIf(ctrl && (!ctrl->AsChm() || ctrl->AsFixed() || ctrl->AsEbook()));
     }
-    else if (Doc::IsSupportedFile(filePath)) {
+    else if (Doc::IsSupportedFile(filePath) && !gGlobalPrefs->ebookUI.useFixedPageUI) {
         Doc doc = Doc::CreateFromFile(filePath);
         if (doc.IsDocLoaded()) {
-            ctrl = EbookController::Create(win->hwndCanvas, win->cbHandler, win->frameRateWnd);
-            // TODO: SetDoc triggers a relayout which spins the message loop early
-            // through UpdateWindow - make sure that Canvas uses the correct WndProc
-            win->currentTab->ctrl = ctrl;
-            win->ctrl = win->currentTab->ctrl;
-            ctrl->AsEbook()->EnableMessageHandling(false);
-            ctrl->AsEbook()->SetDoc(doc, reparseIdx, displayMode);
+            ctrl = EbookController::Create(doc, win->hwndCanvas, win->cbHandler, win->frameRateWnd);
         }
         CrashIf(ctrl && (!ctrl->AsEbook() || ctrl->AsFixed() || ctrl->AsChm()));
     }
@@ -937,12 +946,10 @@ static void UpdateUiForCurrentTab(WindowInfo *win)
 // meaning of the internal values of LoadArgs:
 // isNewWindow : if true then 'win' refers to a newly created window that needs
 //   to be resized and placed
-// allowFailure : if false then keep displaying the previously loaded document
-//   if the new one is broken
 // placeWindow : if true then the Window will be moved/sized according
 //   to the 'state' information even if the window was already placed
 //   before (isNewWindow=false)
-static bool LoadDocIntoCurrentTab(LoadArgs& args, PasswordUI *pwdUI, DisplayState *state=nullptr)
+static void LoadDocIntoCurrentTab(LoadArgs& args, Controller *ctrl, DisplayState *state=nullptr)
 {
     WindowInfo *win = args.win;
     TabInfo *tab = win->currentTab;
@@ -990,23 +997,20 @@ static bool LoadDocIntoCurrentTab(LoadArgs& args, PasswordUI *pwdUI, DisplayStat
     AbortFinding(args.win, false);
 
     Controller *prevCtrl = win->ctrl;
-    tab->filePath.Set(str::Dup(args.fileName));
-    tab->ctrl = CreateControllerForFile(args.fileName, pwdUI, win, displayMode, state ? state->reparseIdx : 0);
+    tab->ctrl = ctrl;
     win->ctrl = tab->ctrl;
-
-    bool needRefresh = !win->ctrl;
 
     // ToC items might hold a reference to an Engine, so make sure to
     // delete them before destroying the whole DisplayModel
     // (same for linkOnLastButtonDown)
-    if (win->ctrl || args.allowFailure) {
-        ClearTocBox(win);
-        delete win->linkOnLastButtonDown;
-        win->linkOnLastButtonDown = nullptr;
-    }
+    ClearTocBox(win);
+    delete tab->tocRoot;
+    tab->tocRoot = nullptr;
+    delete win->linkOnLastButtonDown;
+    win->linkOnLastButtonDown = nullptr;
 
     AssertCrash(!win->IsAboutWindow() && win->IsDocLoaded() == (win->ctrl != nullptr));
-    // TODO: http://code.google.com/p/sumatrapdf/issues/detail?id=1570
+    // TODO: https://code.google.com/p/sumatrapdf/issues/detail?id=1570
     if (win->ctrl) {
         if (win->AsFixed()) {
             DisplayModel *dm = win->AsFixed();
@@ -1028,7 +1032,9 @@ static bool LoadDocIntoCurrentTab(LoadArgs& args, PasswordUI *pwdUI, DisplayStat
                 win->uia_provider->OnDocumentLoad(dm);
         }
         else if (win->AsChm()) {
+            win->AsChm()->SetParentHwnd(win->hwndCanvas);
             win->ctrl->SetDisplayMode(displayMode);
+            ss.page = limitValue(ss.page, 1, win->ctrl->PageCount());
             win->ctrl->GoToPage(ss.page, false);
         }
         else if (win->AsEbook()) {
@@ -1037,17 +1043,10 @@ static bool LoadDocIntoCurrentTab(LoadArgs& args, PasswordUI *pwdUI, DisplayStat
         }
         else
             CrashIf(true);
-        delete prevCtrl;
-    } else if (args.allowFailure || !prevCtrl) {
-        CrashIf(!args.allowFailure);
-        delete prevCtrl;
-        state = nullptr;
     } else {
-        // if there is an error while reading the document and a repair is not requested
-        // then fallback to the previous state
-        tab->ctrl = prevCtrl;
-        win->ctrl = tab->ctrl;
+        state = nullptr;
     }
+    delete prevCtrl;
 
     if (state) {
         CrashIf(!win->IsDocLoaded());
@@ -1078,20 +1077,22 @@ static bool LoadDocIntoCurrentTab(LoadArgs& args, PasswordUI *pwdUI, DisplayStat
     if (!args.isNewWindow && win->IsDocLoaded())
         win->RedrawAll();
 
-    SetFrameTitleForTab(tab, needRefresh);
+    SetFrameTitleForTab(tab, false);
     UpdateUiForCurrentTab(win);
 
-    if (HasPermission(Perm_DiskAccess) && tab->GetEngineType() == Engine_PDF && win->ctrl != prevCtrl) {
+    if (win->AsEbook()) {
+        // start ebook UI layout after UpdateUiForCurrentTab
+        // (prevents the need for an instant re-layout)
+        win->AsEbook()->StartLayouting(state ? state->reparseIdx : 0, displayMode);
+    }
+
+    if (HasPermission(Perm_DiskAccess) && tab->GetEngineType() == Engine_PDF) {
         CrashIf(!win->AsFixed() || win->AsFixed()->pdfSync);
         int res = Synchronizer::Create(args.fileName, win->AsFixed()->GetEngine(), &win->AsFixed()->pdfSync);
         // expose SyncTeX in the UI
         if (PDFSYNCERR_SUCCESS == res)
             gGlobalPrefs->enableTeXEnhancements = true;
     }
-
-    // reallow resizing/relayout/repaining
-    if (win->AsEbook())
-        win->AsEbook()->EnableMessageHandling(true);
 
     if (args.isNewWindow || args.placeWindow && state) {
         if (args.isNewWindow && state && !state->windowPos.IsEmpty()) {
@@ -1117,9 +1118,10 @@ static bool LoadDocIntoCurrentTab(LoadArgs& args, PasswordUI *pwdUI, DisplayStat
         win->AsFixed()->SetScrollState(ss);
 
     win->RedrawAll(true);
+    TabsOnChangedDoc(win);
 
     if (!win->IsDocLoaded())
-        return false;
+        return;
 
     ScopedMem<WCHAR> unsupported(win->ctrl->GetProperty(Prop_UnsupportedFeatures));
     if (unsupported) {
@@ -1132,8 +1134,6 @@ static bool LoadDocIntoCurrentTab(LoadArgs& args, PasswordUI *pwdUI, DisplayStat
         EnterFullScreen(win);
     if (!args.isNewWindow && win->presentation && win->ctrl)
         win->ctrl->SetPresentationMode(true);
-
-    return true;
 }
 
 void ReloadDocument(WindowInfo *win, bool autorefresh)
@@ -1148,6 +1148,18 @@ void ReloadDocument(WindowInfo *win, bool autorefresh)
         return;
     }
 
+    HwndPasswordUI pwdUI(win->hwndFrame);
+    Controller *ctrl = CreateControllerForFile(tab->filePath, &pwdUI, win);
+    // We don't allow PDF-repair if it is an autorefresh because
+    // a refresh event can occur before the file is finished being written,
+    // in which case the repair could fail. Instead, if the file is broken,
+    // we postpone the reload until the next autorefresh event
+    if (!ctrl && autorefresh) {
+        SetFrameTitleForTab(tab, true);
+        win::SetText(win->hwndFrame, tab->frameTitle);
+        return;
+    }
+
     DisplayState *ds = NewDisplayState(tab->filePath);
     tab->ctrl->UpdateDisplayState(ds);
     UpdateDisplayStateWindowRect(*win, *ds);
@@ -1159,22 +1171,15 @@ void ReloadDocument(WindowInfo *win, bool autorefresh)
                     : WIN_STATE_NORMAL ;
     ds->useDefaultState = false;
 
-    ScopedMem<WCHAR> path(str::Dup(tab->filePath));
-    HwndPasswordUI pwdUI(win->hwndFrame);
-    LoadArgs args(path, win);
+    LoadArgs args(tab->filePath, win);
     args.showWin = true;
-    // We don't allow PDF-repair if it is an autorefresh because
-    // a refresh event can occur before the file is finished being written,
-    // in which case the repair could fail. Instead, if the file is broken,
-    // we postpone the reload until the next autorefresh event
-    args.allowFailure = !autorefresh;
     args.placeWindow = false;
-    if (!LoadDocIntoCurrentTab(args, &pwdUI, ds)) {
+    LoadDocIntoCurrentTab(args, ctrl, ds);
+
+    if (!ctrl) {
         DeleteDisplayState(ds);
-        TabsOnChangedDoc(win);
         return;
     }
-    TabsOnChangedDoc(win);
 
     tab->reloadOnFocus = false;
 
@@ -1299,9 +1304,9 @@ static WindowInfo* CreateWindowInfo()
     UpdateWindowRtlLayout(win);
     UpdateToolbarSidebarText(win);
 
-    if (Touch::SupportsGestures()) {
+    if (touch::SupportsGestures()) {
         GESTURECONFIG gc = { 0, GC_ALLGESTURES, 0 };
-        Touch::SetGestureConfig(win->hwndCanvas, 0, 1, &gc, sizeof(GESTURECONFIG));
+        touch::SetGestureConfig(win->hwndCanvas, 0, 1, &gc, sizeof(GESTURECONFIG));
     }
 
     SetTabsInTitlebar(win, gGlobalPrefs->useTabs);
@@ -1482,16 +1487,13 @@ WindowInfo* LoadDocument(LoadArgs& args)
     }
 
     bool openNewTab = gGlobalPrefs->useTabs && !args.forceReuse;
-    if (openNewTab) {
+    if (openNewTab && !args.win) {
         // modify the args so that we always reuse the same window
-        if (!args.win) {
-            // TODO: enable the tab bar if tabs haven't been initialized
-            if (gWindows.Count() > 0) {
-                win = args.win = gWindows.Last();
-                args.isNewWindow = false;
-            }
+        // TODO: enable the tab bar if tabs haven't been initialized
+        if (gWindows.Count() > 0) {
+            win = args.win = gWindows.Last();
+            args.isNewWindow = false;
         }
-        SaveCurrentTabInfo(args.win);
     }
 
     if (!win && 1 == gWindows.Count() && gWindows.At(0)->IsAboutWindow()) {
@@ -1511,38 +1513,40 @@ WindowInfo* LoadDocument(LoadArgs& args)
         }
     }
 
+    HwndPasswordUI pwdUI(win->hwndFrame);
+    Controller *ctrl = CreateControllerForFile(fullPath, &pwdUI, win);
+    // don't fail if a user tries to load an SMX file instead
+    if (!ctrl && IsModificationsFile(fullPath)) {
+        *(WCHAR *)path::GetExt(fullPath) = '\0';
+        ctrl = CreateControllerForFile(fullPath, &pwdUI, win);
+    }
+
     CrashIf(openNewTab && args.forceReuse);
     if (win->IsAboutWindow()) {
         // invalidate the links on the Frequently Read page
         win->staticLinks.Reset();
+        // there's no tab to reuse at this point
+        args.forceReuse = false;
     }
     else {
         CrashIf(!args.forceReuse && !openNewTab);
+        if (openNewTab) {
+            SaveCurrentTabInfo(args.win);
+        }
         CloseDocumentInTab(win, true, args.forceReuse);
     }
     if (!args.forceReuse) {
-        win->currentTab = new TabInfo();
-        win->tabs.Append(win->currentTab);
-        win->currentTab->canvasRc = win->canvasRc;
+        // insert a new tab for the loaded document
+        win->currentTab = CreateNewTab(win, fullPath);
+    }
+    else {
+        win->currentTab->filePath.Set(str::Dup(fullPath));
     }
 
-    HwndPasswordUI pwdUI(win->hwndFrame);
     args.fileName = fullPath;
-    args.allowFailure = true;
     // TODO: stop remembering/restoring window positions when using tabs?
     args.placeWindow = !gGlobalPrefs->useTabs;
-    bool loaded = LoadDocIntoCurrentTab(args, &pwdUI);
-    // don't fail if a user tries to load an SMX file instead
-    if (!loaded && IsModificationsFile(fullPath)) {
-        *(WCHAR *)path::GetExt(fullPath) = '\0';
-        loaded = LoadDocIntoCurrentTab(args, &pwdUI);
-    }
-
-    // insert new tab item for the loaded document
-    if (!args.forceReuse)
-        TabsOnLoadedDoc(win);
-    else
-        TabsOnChangedDoc(win);
+    LoadDocIntoCurrentTab(args, ctrl);
 
     if (gPluginMode) {
         // hide the menu for embedded documents opened from the plugin
@@ -1550,7 +1554,7 @@ WindowInfo* LoadDocument(LoadArgs& args)
         return win;
     }
 
-    if (!loaded) {
+    if (!ctrl) {
         if (gFileHistory.MarkFileInexistent(fullPath))
             prefs::Save();
         return win;
@@ -1736,7 +1740,7 @@ static void RememberSessionState()
             if (tab->ctrl)
                 tab->ctrl->UpdateDisplayState(ds);
             // TODO: pageNo should be good enough, as canvas size is restored as well
-            if (tab->AsEbook())
+            if (tab->AsEbook() && tab->ctrl)
                 ds->pageNo = tab->ctrl->CurrentPageNo();
             ds->showToc = tab->showToc;
             *ds->tocState = tab->tocState;
@@ -1757,7 +1761,7 @@ static void RememberSessionState()
 #error Auto-update without authentication of the downloaded data is not recommended
 #endif
 
-#ifdef SUPPORTS_AUTO_UPDATE
+#if defined(SUPPORTS_AUTO_UPDATE) || defined(DEBUG)
 static void OnMenuExit();
 
 bool AutoUpdateInitiate(const char *updateData)
@@ -1807,7 +1811,7 @@ bool AutoUpdateInitiate(const char *updateData)
     CrashIf(gGlobalPrefs->reopenOnce->Count() > 0);
 #if 0
     RememberSessionState();
-    gGlobalPrefs->reopenOnce->Append(str::Dup("SessionData"));
+    gGlobalPrefs->reopenOnce->Append(str::Dup(L"SessionData"));
 #else
     for (WindowInfo *win : gWindows) {
         for (TabInfo *tab : win->tabs) {
@@ -1822,8 +1826,12 @@ bool AutoUpdateInitiate(const char *updateData)
     ok = LaunchFile(updateExe, updateArgs);
     if (ok)
         OnMenuExit();
-    else
-        FreeVecMembers(*gGlobalPrefs->reopenOnce);
+    else {
+        gGlobalPrefs->reopenOnce->FreeMembers();
+#if 0
+        ResetSessionState(gGlobalPrefs->sessionData);
+#endif
+    }
     return ok;
 }
 #endif
@@ -1861,7 +1869,7 @@ static DWORD ShowAutoUpdateDialog(HWND hParent, HttpRsp *rsp, bool silent)
     if (0 == data->Size())
         return ERROR_INTERNET_CONNECTION_ABORTED;
 
-    // See http://code.google.com/p/sumatrapdf/issues/detail?id=725
+    // See https://code.google.com/p/sumatrapdf/issues/detail?id=725
     // If a user configures os-wide proxy that is not regular ie proxy
     // (which we pick up) we might get complete garbage in response to
     // our query. Make sure to check whether the returned data is sane.
@@ -2049,15 +2057,6 @@ void UpdateDocumentColors()
     RerenderEverything();
 }
 
-#if defined(SHOW_DEBUG_MENU_ITEMS) || defined(DEBUG)
-static void ToggleGdiDebugging()
-{
-    gUseGdiRenderer = !gUseGdiRenderer;
-    DebugGdiPlusDevice(gUseGdiRenderer);
-    RerenderEverything();
-}
-#endif
-
 static void OnMenuExit()
 {
     if (gPluginMode)
@@ -2096,6 +2095,8 @@ static void CloseDocumentInTab(WindowInfo *win, bool keepUIEnabled, bool deleteM
         win->uia_provider->OnDocumentUnload();
     win->ctrl = nullptr;
     if (deleteModel) {
+        delete win->currentTab->tocRoot;
+        win->currentTab->tocRoot = nullptr;
         delete win->currentTab->ctrl;
         win->currentTab->ctrl = nullptr;
         FileWatcherUnsubscribe(win->currentTab->watcher);
@@ -2216,7 +2217,8 @@ void CloseWindow(WindowInfo *win, bool quitIfLast, bool forceClose)
         ShowWindow(win->hwndFrame, SW_HIDE);
     if (lastWindow) {
         // don't call RememberSessionState if OnMenuExit already has
-        if (quitIfLast && gGlobalPrefs->sessionData->Count() == 0)
+        // also don't remember a single document (unless quitting through Menu -> Exit)
+        if (quitIfLast && gGlobalPrefs->sessionData->Count() == 0 && win->tabs.Count() > 1)
             RememberSessionState();
         prefs::Save();
     }
@@ -2255,7 +2257,7 @@ static bool AppendFileFilterForDoc(Controller *ctrl, str::Str<WCHAR>& fileFilter
     if (ctrl->AsFixed())
         type = ctrl->AsFixed()->engineType;
     else if (ctrl->AsChm())
-        type = Engine_Chm2;
+        type = Engine_Chm;
     else if (ctrl->AsEbook()) {
         switch (ctrl->AsEbook()->GetDocType()) {
         case Doc_Epub: type = Engine_Epub; break;
@@ -2272,7 +2274,7 @@ static bool AppendFileFilterForDoc(Controller *ctrl, str::Str<WCHAR>& fileFilter
         case Engine_Image:  fileFilter.AppendFmt(_TR("Image files (*.%s)"), ctrl->DefaultFileExt() + 1); break;
         case Engine_ImageDir: return false; // only show "All files"
         case Engine_PS:     fileFilter.Append(_TR("Postscript documents")); break;
-        case Engine_Chm2:   fileFilter.Append(_TR("CHM documents")); break;
+        case Engine_Chm:    fileFilter.Append(_TR("CHM documents")); break;
         case Engine_Epub:   fileFilter.Append(_TR("EPUB ebooks")); break;
         case Engine_Mobi:   fileFilter.Append(_TR("Mobi documents")); break;
         case Engine_Fb2:    fileFilter.Append(_TR("FictionBook documents")); break;
@@ -2587,7 +2589,7 @@ static void OnMenuSaveBookmark(WindowInfo& win)
 }
 
 #if 0
-// code adapted from http://support.microsoft.com/kb/131462/en-us
+// code adapted from https://support.microsoft.com/kb/131462/en-us
 static UINT_PTR CALLBACK FileOpenHook(HWND hDlg, UINT uiMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uiMsg) {
@@ -2864,7 +2866,10 @@ static void RelayoutFrame(WindowInfo *win, bool updateToolbars=true, int sidebar
 
     dh.End();
 
-    if (tocVisible) {
+    // TODO: if a document with ToC and a broken document are loaded
+    //       and the first document is closed with the ToC still visible,
+    //       we have tocVisible but !win->ctrl
+    if (tocVisible && win->ctrl) {
         // the ToC selection may change due to resizing
         // (and SetSidebarVisibility relies on this for initialization)
         if (win->ctrl->AsEbook())
@@ -2876,6 +2881,7 @@ static void RelayoutFrame(WindowInfo *win, bool updateToolbars=true, int sidebar
 
 static void FrameOnSize(WindowInfo* win, int dx, int dy)
 {
+    UNUSED(dx); UNUSED(dy);
     RelayoutFrame(win);
 
     if (win->presentation || win->isFullScreen) {
@@ -2917,7 +2923,7 @@ static void OnMenuChangeLanguage(HWND hwnd)
     SetCurrentLanguageAndRefreshUI(newLangCode);
 }
 
-static void OnMenuViewShowHideToolbar(WindowInfo *win)
+static void OnMenuViewShowHideToolbar()
 {
     gGlobalPrefs->showToolbar = !gGlobalPrefs->showToolbar;
     for (WindowInfo *win : gWindows) {
@@ -3369,6 +3375,13 @@ bool FrameOnKeydown(WindowInfo *win, WPARAM key, LPARAM lparam, bool inTextfield
     return true;
 }
 
+static WCHAR SingleCharLowerW(WCHAR c)
+{
+    WCHAR buf[2] = { c, 0 };
+    CharLowerBuffW(buf, 1);
+    return buf[0];
+}
+
 static void FrameOnChar(WindowInfo& win, WPARAM key, LPARAM info=0)
 {
     if (PM_BLACK_SCREEN == win.presentation || PM_WHITE_SCREEN == win.presentation) {
@@ -3378,13 +3391,13 @@ static void FrameOnChar(WindowInfo& win, WPARAM key, LPARAM info=0)
 
     if (key >= 0x100 && info && !IsCtrlPressed() && !IsAltPressed()) {
         // determine the intended keypress by scan code for non-Latin keyboard layouts
-        UINT vk = MapVirtualKey((info >> 16) & 0xFF, MAPVK_VSC_TO_VK);
+        UINT vk = MapVirtualKeyW((info >> 16) & 0xFF, MAPVK_VSC_TO_VK);
         if ('A' <= vk && vk <= 'Z')
             key = vk;
     }
 
-    if (IsCharUpper((WCHAR)key))
-        key = (WCHAR)CharLower((LPWSTR)(WCHAR)key);
+    if (IsCharUpperW((WCHAR)key))
+        key = (WPARAM)SingleCharLowerW((WCHAR)key);
 
     switch (key) {
     case VK_ESCAPE:
@@ -3448,7 +3461,7 @@ static void FrameOnChar(WindowInfo& win, WPARAM key, LPARAM info=0)
     case 'z':
         win.ToggleZoom();
         break;
-    // per http://en.wikipedia.org/wiki/Keyboard_layout
+    // per https://en.wikipedia.org/wiki/Keyboard_layout
     // almost all keyboard layouts allow to press either
     // '+' or '=' unshifted (and one of them is also often
     // close to '-'); the other two alternatives are for
@@ -3520,11 +3533,6 @@ static void FrameOnChar(WindowInfo& win, WPARAM key, LPARAM info=0)
             }
         }
         break;
-#ifdef DEBUG
-    case '$':
-        ToggleGdiDebugging();
-        break;
-#endif
 #if defined(DEBUG) || defined(SVN_PRE_RELEASE_VER)
     case 'h': // convert selection to highlight annotation
         if (win.AsFixed() && win.AsFixed()->GetEngine()->SupportsAnnotation() && win.showSelection && win.currentTab->selectionOnPage) {
@@ -3630,12 +3638,13 @@ void SetSidebarVisibility(WindowInfo *win, bool tocVisible, bool showFavorites)
     if (showFavorites)
         PopulateFavTreeIfNeeded(win);
 
-    if (!win->currentTab)
+    if (!win->currentTab) {
         CrashIf(tocVisible);
-    else if (!win->presentation)
+    } else if (!win->presentation) {
         win->currentTab->showToc = tocVisible;
-    else if (PM_ENABLED == win->presentation)
+    } else if (PM_ENABLED == win->presentation) {
         win->currentTab->showTocPresentation = tocVisible;
+    }
     win->tocVisible = tocVisible;
 
     // TODO: make this a per-window setting as well?
@@ -3850,7 +3859,7 @@ static LRESULT FrameOnCommand(WindowInfo *win, HWND hwnd, UINT msg, WPARAM wPara
             break;
 
         case IDM_VIEW_SHOW_HIDE_TOOLBAR:
-            OnMenuViewShowHideToolbar(win);
+            OnMenuViewShowHideToolbar();
             break;
 
         case IDM_VIEW_SHOW_HIDE_MENUBAR:
@@ -4032,10 +4041,6 @@ static LRESULT FrameOnCommand(WindowInfo *win, HWND hwnd, UINT msg, WPARAM wPara
             gDebugShowLinks = !gDebugShowLinks;
             for (size_t i = 0; i < gWindows.Count(); i++)
                 gWindows.At(i)->RedrawAll(true);
-            break;
-
-        case IDM_DEBUG_GDI_RENDERER:
-            ToggleGdiDebugging();
             break;
 
         case IDM_DEBUG_EBOOK_UI:
@@ -4292,15 +4297,24 @@ InitMouseWheelInfo:
 void GetProgramInfo(str::Str<char>& s)
 {
     s.AppendFmt("Ver: %s", CURR_VERSION_STRA);
-#ifdef SVN_PRE_RELEASE_VER
+#if defined(SVN_PRE_RELEASE_VER)
     s.AppendFmt(" pre-release");
 #endif
+    if (IsProcess64()) {
+        s.Append(" 64-bit");
+    }
 #ifdef DEBUG
-    if (!str::EndsWith(s.Get(), " (dbg)"))
+    if (!str::Find(s.Get(), " (dbg)"))
         s.Append(" (dbg)");
 #endif
+    if (gPluginMode)
+        s.Append(" [plugin]");
     s.Append("\r\n");
-    s.AppendFmt("Browser plugin: %s\r\n", gPluginMode ? "yes" : "no");
+
+#if defined(GIT_COMMIT_ID)
+    const char *gitSha1 = QM(GIT_COMMIT_ID);
+    s.AppendFmt("Git: %s (https://github.com/sumatrapdfreader/sumatrapdf/tree/%s)\r\n", gitSha1, gitSha1);
+#endif
 }
 
 bool CrashHandlerCanUseNet()
@@ -4308,7 +4322,7 @@ bool CrashHandlerCanUseNet()
     return HasPermission(Perm_InternetAccess);
 }
 
-void CrashHandlerMessage()
+void ShowCrashHandlerMessage()
 {
     // don't show a message box in restricted use, as the user most likely won't be
     // able to do anything about it anyway and it's up to the application provider

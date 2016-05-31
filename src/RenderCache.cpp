@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -650,7 +650,7 @@ UINT RenderCache::PaintTile(HDC hdc, RectI bounds, DisplayModel *dm, int pageNo,
         int ySrc = -std::min(tileOnScreen.y, 0);
         float factor = std::min(1.0f * bmpSize.dx / tileOnScreen.dx, 1.0f * bmpSize.dy / tileOnScreen.dy);
 
-        SelectObject(bmpDC, hbmp);
+        HGDIOBJ prevBmp = SelectObject(bmpDC, hbmp);
         if (factor != 1.0f)
             StretchBlt(hdc, bounds.x, bounds.y, bounds.dx, bounds.dy,
                 bmpDC, (int)(xSrc * factor), (int)(ySrc * factor),
@@ -659,6 +659,7 @@ UINT RenderCache::PaintTile(HDC hdc, RectI bounds, DisplayModel *dm, int pageNo,
             BitBlt(hdc, bounds.x, bounds.y, bounds.dx, bounds.dy,
                 bmpDC, xSrc, ySrc, SRCCOPY);
 
+        SelectObject(bmpDC, prevBmp);
         DeleteDC(bmpDC);
 
 #ifdef SHOW_TILE_LAYOUT
@@ -691,6 +692,22 @@ UINT RenderCache::Paint(HDC hdc, RectI bounds, DisplayModel *dm, int pageNo,
                         PageInfo *pageInfo, bool *renderOutOfDateCue)
 {
     assert(pageInfo->shown && 0.0 != pageInfo->visibleRatio);
+
+    if (!dm->ShouldCacheRendering(pageNo)) {
+        int rotation = dm->GetRotation();
+        float zoom = dm->GetZoomReal(pageNo);
+        bounds = pageInfo->pageOnScreen.Intersect(bounds);
+
+        RectD area = bounds.Convert<double>();
+        area.Offset(-pageInfo->pageOnScreen.x, -pageInfo->pageOnScreen.y);
+        area = dm->GetEngine()->Transform(area, pageNo, zoom, rotation, true);
+
+        RenderedBitmap *bmp = dm->GetEngine()->RenderBitmap(pageNo, zoom, rotation, &area);
+        bool success = bmp && bmp->GetBitmap() && bmp->StretchDIBits(hdc, bounds);
+        delete bmp;
+
+        return success ? 0 : RENDER_DELAY_FAILED;
+    }
 
     int rotation = dm->GetRotation();
     float zoom = dm->GetZoomReal();

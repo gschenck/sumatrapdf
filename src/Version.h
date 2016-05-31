@@ -1,20 +1,17 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
-// CURR_VERSION can be over-written externally (via makefile)
+// CURR_VERSION can be over-written externally
 #ifndef CURR_VERSION
-#define CURR_VERSION 3.1
+#define CURR_VERSION 3.2
 #endif
 #ifndef CURR_VERSION_COMMA
-#define CURR_VERSION_COMMA 3,1,0
+#define CURR_VERSION_COMMA 3,2,0
 #endif
+
 // VER_QUALIFIER allows people who recompile SumatraPDF to add
 // a distinguishing string at the end of the version number
-// (e.g. version 2.3.2z or 2.4opt or 2.5x64)
-#if !defined(VER_QUALIFIER) && defined(DEBUG)
-// adds " (dbg)" after the version in debug builds
-#define VER_QUALIFIER \x20(dbg)
-#endif
+// (e.g. version 2.3.2z or 2.4opt)
 
 #define APP_NAME_STR       L"SumatraPDF"
 
@@ -52,5 +49,5 @@
 #endif
 #define CURR_VERSION_STR TEXT(CURR_VERSION_STRA)
 
-#define COPYRIGHT_STR      "Copyright 2006-2014 all authors (GPLv3)"
+#define COPYRIGHT_STR      "Copyright 2006-2015 all authors (GPLv3)"
 #define PUBLISHER_STR      "Krzysztof Kowalczyk"

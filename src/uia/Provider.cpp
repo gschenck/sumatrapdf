@@ -1,94 +1,14 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 #include "BaseUtil.h"
-#include <UIAutomationCore.h>
-#include <UIAutomationCoreApi.h>
-#include <OleAcc.h>
-#include <dbghelp.h>
-#include <tlhelp32.h>
+#include "WinDynCalls.h"
 #include "DbgHelpDyn.h"
 #include "WinUtil.h"
 #include "uia/Provider.h"
 #include "uia/Constants.h"
 #include "uia/DocumentProvider.h"
 #include "uia/StartPageProvider.h"
-
-// not available under Win2000
-typedef LRESULT (WINAPI *UiaReturnRawElementProviderProc)(HWND hwnd, WPARAM wParam, LPARAM lParam, IRawElementProviderSimple *el);
-typedef HRESULT (WINAPI *UiaHostProviderFromHwndProc)(HWND hwnd, IRawElementProviderSimple ** pProvider);
-typedef HRESULT (WINAPI *UiaRaiseAutomationEventProc)(IRawElementProviderSimple * pProvider, EVENTID id);
-typedef HRESULT (WINAPI *UiaRaiseStructureChangedEventProc)(IRawElementProviderSimple * pProvider, StructureChangeType structureChangeType, int * pRuntimeId, int cRuntimeIdLen);
-typedef HRESULT (WINAPI *UiaGetReservedNotSupportedValueProc)(IUnknown **punkNotSupportedValue);
-
-namespace uia {
-
-static bool gFuncsLoaded = false;
-static UiaReturnRawElementProviderProc _UiaReturnRawElementProvider = nullptr;
-static UiaHostProviderFromHwndProc _UiaHostProviderFromHwnd = nullptr;
-static UiaRaiseAutomationEventProc _UiaRaiseAutomationEvent = nullptr;
-static UiaRaiseStructureChangedEventProc _UiaRaiseStructureChangedEvent = nullptr;
-static UiaGetReservedNotSupportedValueProc _UiaGetReservedNotSupportedValue = nullptr;
-
-void Initialize()
-{
-    static bool funcsLoaded = false;
-    if (funcsLoaded)
-        return;
-
-    HMODULE h = SafeLoadLibrary(L"uiautomationcore.dll");
-#define Load(func) _ ## func = (func ## Proc)GetProcAddress(h, #func)
-    Load(UiaReturnRawElementProvider);
-    Load(UiaHostProviderFromHwnd);
-    Load(UiaRaiseAutomationEvent);
-    Load(UiaRaiseStructureChangedEvent);
-    Load(UiaGetReservedNotSupportedValue);
-#undef Load
-
-    funcsLoaded = true;
-}
-
-LRESULT ReturnRawElementProvider(HWND hwnd, WPARAM wParam, LPARAM lParam, IRawElementProviderSimple *provider)
-{
-    Initialize();
-    if (!_UiaReturnRawElementProvider)
-        return 0;
-    return _UiaReturnRawElementProvider(hwnd, wParam, lParam, provider);
-}
-
-HRESULT HostProviderFromHwnd(HWND hwnd, IRawElementProviderSimple ** pProvider)
-{
-    Initialize();
-    if (!_UiaHostProviderFromHwnd)
-        return E_NOTIMPL;
-    return _UiaHostProviderFromHwnd(hwnd, pProvider);
-}
-
-HRESULT RaiseAutomationEvent(IRawElementProviderSimple * pProvider, EVENTID id)
-{
-    Initialize();
-    if (!_UiaRaiseAutomationEvent)
-        return E_NOTIMPL;
-    return _UiaRaiseAutomationEvent(pProvider, id);
-}
-
-HRESULT RaiseStructureChangedEvent(IRawElementProviderSimple * pProvider, StructureChangeType structureChangeType, int * pRuntimeId, int cRuntimeIdLen)
-{
-    Initialize();
-    if (!_UiaRaiseStructureChangedEvent)
-        return E_NOTIMPL;
-    return _UiaRaiseStructureChangedEvent(pProvider, structureChangeType, pRuntimeId, cRuntimeIdLen);
-}
-
-HRESULT GetReservedNotSupportedValue(IUnknown **punkNotSupportedValue)
-{
-    Initialize();
-    if (!_UiaRaiseStructureChangedEvent)
-        return E_NOTIMPL;
-    return _UiaGetReservedNotSupportedValue(punkNotSupportedValue);
-}
-
-};
 
 SumatraUIAutomationProvider::SumatraUIAutomationProvider(HWND hwnd) :
     refCount(1), canvasHwnd(hwnd), startpage(nullptr), document(nullptr)
@@ -163,6 +83,7 @@ ULONG STDMETHODCALLTYPE SumatraUIAutomationProvider::Release(void)
 
 HRESULT STDMETHODCALLTYPE SumatraUIAutomationProvider::GetPatternProvider(PATTERNID patternId,IUnknown **pRetVal)
 {
+    UNUSED(patternId);
     *pRetVal = nullptr;
     return S_OK;
 }

@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 #define EXENAME             APP_NAME_STR L".exe"
@@ -8,17 +8,20 @@
 #define INSTALLER_WIN_DX    420
 #define INSTALLER_WIN_DY    340
 
-#define PUSH_BUTTON_DY  dpiAdjust(22)
+#define WIN_BG_COLOR RGB(0xff, 0xf2, 0) // yellow
 
-#define WINDOW_MARGIN   8
-// The window is divided in three parts:
-// * top part, where we display nice graphics
-// * middle part, where we either display messages or advanced options
-// * bottom part, with install/uninstall button
-// This is the height of the top part
-#define TITLE_PART_DY  dpiAdjust(110)
+#define WINDOW_MARGIN   dpiAdjust(8)
+
+/* The window is divided in three parts:
+- top part, where we display nice graphics
+- middle part, where we either display messages or advanced options
+- bottom part, with install/uninstall button
+*/
+
 // This is the height of the lower part
-#define BOTTOM_PART_DY (PUSH_BUTTON_DY + 2 * WINDOW_MARGIN)
+extern int gBottomPartDy;
+
+extern int gButtonDy;
 
 // This is in HKLM. Note that on 64bit windows, if installing 32bit app
 // the installer has to be 32bit as well, so that it goes into proper
@@ -125,7 +128,7 @@ const WCHAR *GetOwnPath();
 bool OnWmCommand(WPARAM wParam);
 bool CreateProcessHelper(const WCHAR *exe, const WCHAR *args=nullptr);
 WCHAR *GetUninstallerPath();
-int KillProcess(const WCHAR *processPath, BOOL waitUntilTerminated);
+int KillProcess(const WCHAR *processPath, bool waitUntilTerminated);
 void UninstallBrowserPlugin();
 void UninstallPdfFilter();
 void UninstallPdfPreviewer();
@@ -135,7 +138,10 @@ void InvalidateFrame();
 bool CheckInstallUninstallPossible(bool silent=false);
 void CreateButtonExit(HWND hwndParent);
 void OnButtonExit();
-HWND CreateDefaultButton(HWND hwndParent, const WCHAR *label, int width, int id=IDOK);
+HWND CreateButton(HWND hwndParent, const WCHAR *s, int id, DWORD style, SIZE& sizeOut);
+HWND CreateDefaultButton(HWND hwndParent, const WCHAR *s, int id);
+SIZE SetButtonTextAndResize(HWND hwnd, const WCHAR * s);
+SIZE GetIdealButtonSize(HWND hwnd);
 int dpiAdjust(int value);
 void InstallPdfFilter();
 void InstallPdfPreviewer();
@@ -150,6 +156,7 @@ DWORD WINAPI UninstallerThread(LPVOID data);
 #else
 
 extern HWND gHwndButtonRunSumatra;
+
 bool IsValidInstaller();
 void OnInstallationFinished();
 bool IsPdfFilterInstalled();

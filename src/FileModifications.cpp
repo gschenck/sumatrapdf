@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -129,7 +129,7 @@ bool SaveFileModifictions(const WCHAR *filePath, Vec<PageAnnotation> *list)
         // (don't rewrite the existing ones in case they're by a newer version which
         // added annotation types and properties this version doesn't know anything about)
         for (; offset < prevList->Count() && prevList->At(offset) == list->At(offset); offset++);
-        CrashIf(offset != prevList->Count());
+        CrashIfDebugOnly(offset != prevList->Count());
         data.AppendAndFree(prevData.StealData());
         delete prevList;
     }

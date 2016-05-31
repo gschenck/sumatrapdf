@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -47,22 +47,24 @@ public:
     virtual RenderedBitmap *RenderBitmap(int pageNo, float zoom, int rotation,
                          RectD *pageRect=nullptr, /* if nullptr: defaults to the page's mediabox */
                          RenderTarget target=Target_View, AbortCookie **cookie_out=nullptr);
-    virtual bool RenderPage(HDC hDC, RectI screenRect, int pageNo, float zoom, int rotation,
-                         RectD *pageRect=nullptr, RenderTarget target=Target_View, AbortCookie **cookie_out=nullptr);
 
     virtual PointD Transform(PointD pt, int pageNo, float zoom, int rotation, bool inverse=false);
     virtual RectD Transform(RectD rect, int pageNo, float zoom, int rotation, bool inverse=false);
 
     virtual unsigned char *GetFileData(size_t *cbCount);
     virtual bool SaveFileAs(const WCHAR *copyFileName, bool includeUserAnnots=false);
-    virtual WCHAR * ExtractPageText(int pageNo, const WCHAR *lineSep, RectI **coords_out=nullptr,
-                                    RenderTarget target=Target_View) { return nullptr; }
-    virtual bool HasClipOptimizations(int pageNo) { return false; }
+    virtual WCHAR * ExtractPageText(int pageNo, const WCHAR *lineSep, RectI **coordsOut=nullptr,
+                                    RenderTarget target=Target_View) {
+        UNUSED(pageNo); UNUSED(lineSep);
+        UNUSED(coordsOut); UNUSED(target);
+        return nullptr;
+    }
+    virtual bool HasClipOptimizations(int pageNo) { UNUSED(pageNo);  return false; }
     virtual PageLayoutType PreferredLayout() { return Layout_NonContinuous; }
     virtual bool IsImageCollection() const { return true; }
 
-    virtual bool SupportsAnnotation(bool forSaving=false) const { return false; }
-    virtual void UpdateUserAnnotations(Vec<PageAnnotation> *list) { }
+    virtual bool SupportsAnnotation(bool forSaving = false) const { UNUSED(forSaving);  return false; }
+    virtual void UpdateUserAnnotations(Vec<PageAnnotation> *list) { UNUSED(list); }
 
     virtual Vec<PageElement *> *GetElements(int pageNo);
     virtual PageElement *GetElementAtPos(int pageNo, PointD pt);
@@ -118,10 +120,16 @@ RectD ImagesEngine::PageMediabox(int pageNo)
     return mediaboxes.At(pageNo - 1);
 }
 
-RenderedBitmap *ImagesEngine::RenderBitmap(int pageNo, float zoom, int rotation, RectD *pageRect, RenderTarget target, AbortCookie **cookie_out)
+RenderedBitmap *ImagesEngine::RenderBitmap(int pageNo, float zoom, int rotation, RectD *pageRect, RenderTarget target, AbortCookie **cookieOut)
 {
+    UNUSED(target); UNUSED(cookieOut);
+    ImagePage *page = GetPage(pageNo);
+    if (!page)
+        return nullptr;
+
     RectD pageRc = pageRect ? *pageRect : PageMediabox(pageNo);
     RectI screen = Transform(pageRc, pageNo, zoom, rotation).Round();
+    PointI screenTL = screen.TL();
     screen.Offset(-screen.x, -screen.y);
 
     HANDLE hMap = nullptr;
@@ -129,40 +137,20 @@ RenderedBitmap *ImagesEngine::RenderBitmap(int pageNo, float zoom, int rotation,
     HDC hDC = CreateCompatibleDC(nullptr);
     DeleteObject(SelectObject(hDC, hbmp));
 
-    bool ok = RenderPage(hDC, screen, pageNo, zoom, rotation, pageRect, target, cookie_out);
-    DeleteDC(hDC);
-    if (!ok) {
-        DeleteObject(hbmp);
-        CloseHandle(hMap);
-        return nullptr;
-    }
-
-    return new RenderedBitmap(hbmp, screen.Size(), hMap);
-}
-
-bool ImagesEngine::RenderPage(HDC hDC, RectI screenRect, int pageNo, float zoom, int rotation, RectD *pageRect, RenderTarget target, AbortCookie **cookie_out)
-{
-    ImagePage *page = GetPage(pageNo);
-    if (!page)
-        return false;
-
-    RectD pageRc = pageRect ? *pageRect : PageMediabox(pageNo);
-    RectI screen = Transform(pageRc, pageNo, zoom, rotation).Round();
-
     Graphics g(hDC);
     g.SetCompositingQuality(CompositingQualityHighQuality);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetPageUnit(UnitPixel);
 
     Color white(0xFF, 0xFF, 0xFF);
-    Rect screenR(screenRect.ToGdipRect());
-    g.SetClip(screenR);
     SolidBrush tmpBrush(white);
+    Rect screenR(screen.ToGdipRect());
+    screenR.Inflate(1, 1);
     g.FillRectangle(&tmpBrush, screenR);
 
     Matrix m;
     GetTransform(m, pageNo, zoom, rotation);
-    m.Translate((REAL)(screenRect.x - screen.x), (REAL)(screenRect.y - screen.y), MatrixOrderAppend);
+    m.Translate((REAL)-screenTL.x, (REAL)-screenTL.y, MatrixOrderAppend);
     g.SetTransform(&m);
 
     RectI pageRcI = PageMediabox(pageNo).Round();
@@ -171,7 +159,15 @@ bool ImagesEngine::RenderPage(HDC hDC, RectI screenRect, int pageNo, float zoom,
     Status ok = g.DrawImage(page->bmp, pageRcI.ToGdipRect(), 0, 0, pageRcI.dx, pageRcI.dy, UnitPixel, &imgAttrs);
 
     DropPage(page);
-    return ok == Ok;
+    DeleteDC(hDC);
+
+    if (ok != Ok) {
+        DeleteObject(hbmp);
+        CloseHandle(hMap);
+        return nullptr;
+    }
+
+    return new RenderedBitmap(hbmp, screen.Size(), hMap);
 }
 
 void ImagesEngine::GetTransform(Matrix& m, int pageNo, float zoom, int rotation)
@@ -260,6 +256,7 @@ unsigned char *ImagesEngine::GetFileData(size_t *cbCount)
 
 bool ImagesEngine::SaveFileAs(const WCHAR *copyFileName, bool includeUserAnnots)
 {
+    UNUSED(includeUserAnnots);
     if (fileName) {
         BOOL ok = CopyFile(fileName, copyFileName, FALSE);
         if (ok)
@@ -398,17 +395,15 @@ bool ImageEngineImpl::LoadFromStream(IStream *stream)
     char header[18];
     if (ReadDataFromStream(stream, header, sizeof(header)))
         fileExt = GfxFileExtFromData(header, sizeof(header));
+    if (!fileExt)
+        return false;
 
-    if (fileExt && !IsGdiPlusNativeFormat(header, sizeof(header))) {
-        size_t len;
-        ScopedMem<char> data((char *)GetDataFromStream(stream, &len));
-        image = BitmapFromData(data, len);
-    }
-    else {
+    size_t len;
+    ScopedMem<char> data((char *)GetDataFromStream(stream, &len));
+    if (IsGdiPlusNativeFormat(data, len))
         image = Bitmap::FromStream(stream);
-        if (!fileExt)
-            fileExt = L".png";
-    }
+    else
+        image = BitmapFromData(data, len);
 
     return FinishLoading();
 }
@@ -532,6 +527,7 @@ RectD ImageEngineImpl::LoadMediabox(int pageNo)
 
 bool ImageEngineImpl::SaveFileAsPDF(const WCHAR *pdfFileName, bool includeUserAnnots)
 {
+    UNUSED(includeUserAnnots);
     bool ok = true;
     PdfCreator *c = new PdfCreator();
     if (fileName) {
@@ -622,10 +618,10 @@ public:
         return fileName ? CreateFromFile(fileName) : nullptr;
     }
 
-    virtual unsigned char *GetFileData(size_t *cbCount) { return nullptr; }
+    virtual unsigned char *GetFileData(size_t *cbCountOut) { UNUSED(cbCountOut);  return nullptr; }
     virtual bool SaveFileAs(const WCHAR *copyFileName, bool includeUserAnnots=false);
 
-    virtual WCHAR *GetProperty(DocumentProperty prop) { return nullptr; }
+    virtual WCHAR *GetProperty(DocumentProperty prop) { UNUSED(prop); return nullptr; }
 
     // TODO: is there a better place to expose pageFileNames than through page labels?
     virtual bool HasPageLabels() const { return true; }
@@ -730,6 +726,7 @@ DocTocItem *ImageDirEngineImpl::GetTocTree()
 
 bool ImageDirEngineImpl::SaveFileAs(const WCHAR *copyFileName, bool includeUserAnnots)
 {
+    UNUSED(includeUserAnnots);
     // only copy the files if the target directory doesn't exist yet
     if (!CreateDirectory(copyFileName, nullptr))
         return false;
@@ -766,6 +763,7 @@ RectD ImageDirEngineImpl::LoadMediabox(int pageNo)
 
 bool ImageDirEngineImpl::SaveFileAsPDF(const WCHAR *pdfFileName, bool includeUserAnnots)
 {
+    UNUSED(includeUserAnnots);
     bool ok = true;
     PdfCreator *c = new PdfCreator();
     for (int i = 1; i <= PageCount() && ok; i++) {
@@ -793,6 +791,7 @@ namespace ImageDirEngine {
 
 bool IsSupportedFile(const WCHAR *fileName, bool sniff)
 {
+    UNUSED(sniff);
     // whether it actually contains images will be checked in LoadImageDir
     return dir::Exists(fileName);
 }
@@ -852,6 +851,7 @@ protected:
     char *GetImageData(int pageNo, size_t& len);
     void ParseComicInfoXml(const char *xmlData);
 
+    // access to cbxFile must be protected after initialization (with cacheAccess)
     ArchFile *cbxFile;
     CbxFormat cbxFormat;
     Vec<size_t> fileIdxs;
@@ -1036,6 +1036,7 @@ bool CbxEngineImpl::Visit(const char *path, const char *value, json::DataType ty
 
 bool CbxEngineImpl::SaveFileAsPDF(const WCHAR *pdfFileName, bool includeUserAnnots)
 {
+    UNUSED(includeUserAnnots);
     bool ok = true;
     PdfCreator *c = new PdfCreator();
     for (int i = 1; i <= PageCount() && ok; i++) {

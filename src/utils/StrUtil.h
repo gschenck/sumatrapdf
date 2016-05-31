@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 // note: include BaseUtil.h instead of including directly
@@ -53,15 +53,15 @@ bool EndsWith(const WCHAR *txt, const WCHAR *end);
 bool EndsWithI(const char *txt, const char *end);
 bool EndsWithI(const WCHAR *txt, const WCHAR *end);
 
-static inline bool EqNIx(const char *s, size_t len, const char *s2) {
+inline bool EqNIx(const char *s, size_t len, const char *s2) {
     return str::Len(s2) == len && str::StartsWithI(s, s2);
 }
 
 char *  DupN(const char *s, size_t lenCch);
 WCHAR * DupN(const WCHAR *s, size_t lenCch);
 
-void ToLower(char *s);
-void ToLower(WCHAR *s);
+char* ToLowerInPlace(char *s);
+WCHAR* ToLowerInPlace(WCHAR *s);
 
 char *  ToMultiByte(const WCHAR *txt, UINT CodePage, int cchTxtLen=-1);
 char *  ToMultiByte(const char *src, UINT CodePageSrc, UINT CodePageDest);

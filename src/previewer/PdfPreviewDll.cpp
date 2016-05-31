@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -111,6 +111,7 @@ private:
 
 STDAPI_(BOOL) DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved)
 {
+    UNUSED(lpReserved);
     if (dwReason == DLL_PROCESS_ATTACH) {
         CrashIf(hInstance != GetInstance());
     }
@@ -287,7 +288,7 @@ STDAPI DllInstall(BOOL bInstall, LPCWSTR pszCmdLine)
     // allows installing only a subset of available preview handlers
     if (str::StartsWithI(pszCmdLine, L"exts:")) {
         ScopedMem<WCHAR> extsList(str::Dup(pszCmdLine + 5));
-        str::ToLower(extsList);
+        str::ToLowerInPlace(extsList);
         str::TransChars(extsList, L";. :", L",,,\0");
         WStrVec exts;
         exts.Split(extsList, L",", true);

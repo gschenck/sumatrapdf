@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -232,18 +232,27 @@ const char *EPUB_ENC_NS = "http://www.w3.org/2001/04/xmlenc#";
 
 EpubDoc::EpubDoc(const WCHAR *fileName) :
     zip(fileName, true), fileName(str::Dup(fileName)),
-    isNcxToc(false), isRtlDoc(false) { }
+    isNcxToc(false), isRtlDoc(false) {
+    InitializeCriticalSection(&zipAccess);
+}
 
 EpubDoc::EpubDoc(IStream *stream) :
     zip(stream, true), fileName(nullptr),
-    isNcxToc(false), isRtlDoc(false) { }
+    isNcxToc(false), isRtlDoc(false) {
+    InitializeCriticalSection(&zipAccess);
+}
 
 EpubDoc::~EpubDoc()
 {
+    EnterCriticalSection(&zipAccess);
+
     for (size_t i = 0; i < images.Count(); i++) {
         free(images.At(i).base.data);
         free(images.At(i).id);
     }
+
+    LeaveCriticalSection(&zipAccess);
+    DeleteCriticalSection(&zipAccess);
 }
 
 bool EpubDoc::Load()
@@ -268,7 +277,7 @@ bool EpubDoc::Load()
     WStrList encList;
     ScopedMem<char> encryption(zip.GetFileDataByName(L"META-INF/encryption.xml"));
     if (encryption) {
-        HtmlElement *encRoot = parser.ParseInPlace(encryption);
+        (void)parser.ParseInPlace(encryption);
         HtmlElement *cr = parser.FindElementByNameNS("CipherReference", EPUB_ENC_NS);
         while (cr) {
             WCHAR *uri = cr->GetAttribute("URI");
@@ -434,6 +443,8 @@ size_t EpubDoc::GetHtmlDataSize() const
 
 ImageData *EpubDoc::GetImageData(const char *id, const char *pagePath)
 {
+    ScopedCritSec scope(&zipAccess);
+
     if (!pagePath) {
         CrashIf(true);
         // if we're reparsing, we might not have pagePath, which is needed to
@@ -491,6 +502,8 @@ char *EpubDoc::GetFileData(const char *relPath, const char *pagePath, size_t *le
         CrashIf(true);
         return nullptr;
     }
+
+    ScopedCritSec scope(&zipAccess);
 
     ScopedMem<char> url(NormalizeURL(relPath, pagePath));
     ScopedMem<WCHAR> zipPath(str::conv::FromUtf8(url));
@@ -624,7 +637,11 @@ bool EpubDoc::ParseToc(EbookTocVisitor *visitor)
     if (!tocPath)
         return false;
     size_t tocDataLen;
-    ScopedMem<char> tocData(zip.GetFileDataByName(tocPath, &tocDataLen));
+    ScopedMem<char> tocData;
+    {
+        ScopedCritSec scope(&zipAccess);
+        tocData.Set(zip.GetFileDataByName(tocPath, &tocDataLen));
+    }
     if (!tocData)
         return false;
 
@@ -947,6 +964,7 @@ bool Fb2Doc::ParseToc(EbookTocVisitor *visitor)
 
 bool Fb2Doc::IsSupportedFile(const WCHAR *fileName, bool sniff)
 {
+    UNUSED(sniff);
     // TODO: implement sniffing
     return str::EndsWithI(fileName, L".fb2")  ||
            str::EndsWithI(fileName, L".fb2z") ||
@@ -978,12 +996,7 @@ Fb2Doc *Fb2Doc::CreateFromStream(IStream *stream)
 
 PalmDoc::PalmDoc(const WCHAR *fileName) : fileName(str::Dup(fileName)) { }
 
-PalmDoc::~PalmDoc()
-{
-    for (size_t i = 0; i < images.Count(); i++) {
-        free(images.At(i).base.data);
-        free(images.At(i).id);
-    }
+PalmDoc::~PalmDoc() {
 }
 
 #define PDB_TOC_ENTRY_MARK "ToC!Entry!"
@@ -991,6 +1004,7 @@ PalmDoc::~PalmDoc()
 // cf. http://wiki.mobileread.com/wiki/TealDoc
 static const char *HandleTealDocTag(str::Str<char>& builder, WStrVec& tocEntries, const char *text, size_t len, UINT codePage)
 {
+    UNUSED(codePage);
     if (len < 9) {
 Fallback:
         builder.Append("&lt;");
@@ -1116,6 +1130,7 @@ size_t PalmDoc::GetHtmlDataSize() const
 
 WCHAR *PalmDoc::GetProperty(DocumentProperty prop) const
 {
+    UNUSED(prop);
     return nullptr;
 }
 
@@ -1218,6 +1233,9 @@ const char *HtmlDoc::GetHtmlData(size_t *lenOut) const
 
 ImageData *HtmlDoc::GetImageData(const char *id)
 {
+    // TODO: this isn't thread-safe (might leak image data when called concurrently),
+    //       so add a critical section once it's used for EbookController
+
     ScopedMem<char> url(NormalizeURL(id, pagePath));
     for (size_t i = 0; i < images.Count(); i++) {
         if (str::Eq(images.At(i).id, url))
@@ -1262,6 +1280,7 @@ const WCHAR *HtmlDoc::GetFileName() const
 
 bool HtmlDoc::IsSupportedFile(const WCHAR *fileName, bool sniff)
 {
+    UNUSED(sniff);
     return str::EndsWithI(fileName, L".html") ||
            str::EndsWithI(fileName, L".htm") ||
            str::EndsWithI(fileName, L".xhtml");
@@ -1488,6 +1507,7 @@ const char *TxtDoc::GetHtmlData(size_t *lenOut) const
 
 WCHAR *TxtDoc::GetProperty(DocumentProperty prop) const
 {
+    UNUSED(prop);
     return nullptr;
 }
 
@@ -1540,6 +1560,7 @@ bool TxtDoc::ParseToc(EbookTocVisitor *visitor)
 
 bool TxtDoc::IsSupportedFile(const WCHAR *fileName, bool sniff)
 {
+    UNUSED(sniff);
     return str::EndsWithI(fileName, L".txt") ||
            str::EndsWithI(fileName, L".log") ||
            // http://en.wikipedia.org/wiki/.nfo

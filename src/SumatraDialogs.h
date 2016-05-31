@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 struct GlobalPrefs;
@@ -19,12 +19,10 @@ enum PrintScaleAdv { PrintScaleNone = 0, PrintScaleShrink, PrintScaleFit };
 struct Print_Advanced_Data {
     PrintRangeAdv range;
     PrintScaleAdv scale;
-    bool asImage;
 
     explicit Print_Advanced_Data(PrintRangeAdv range=PrintRangeAll,
-                        PrintScaleAdv scale=PrintScaleShrink,
-                        bool asImage=false) :
-        range(range), scale(scale), asImage(asImage) { }
+                        PrintScaleAdv scale=PrintScaleShrink) :
+        range(range), scale(scale) { }
 };
 
 HPROPSHEETPAGE CreatePrintAdvancedPropSheet(Print_Advanced_Data *data, ScopedMem<DLGTEMPLATE>& dlgTemplate);

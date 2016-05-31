@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // engines which render flowed ebook formats into fixed pages through the BaseEngine API
@@ -73,8 +73,9 @@ public:
     virtual const WCHAR *FileName() const { return fileName; };
     virtual int PageCount() const { return pages ? (int)pages->Count() : 0; }
 
-    virtual RectD PageMediabox(int pageNo) { return pageRect; }
+    virtual RectD PageMediabox(int pageNo) { UNUSED(pageNo);  return pageRect; }
     virtual RectD PageContentBox(int pageNo, RenderTarget target=Target_View) {
+        UNUSED(target);
         RectD mbox = PageMediabox(pageNo);
         mbox.Inflate(-pageBorder, -pageBorder);
         return mbox;
@@ -83,8 +84,6 @@ public:
     virtual RenderedBitmap *RenderBitmap(int pageNo, float zoom, int rotation,
                          RectD *pageRect=nullptr, /* if nullptr: defaults to the page's mediabox */
                          RenderTarget target=Target_View, AbortCookie **cookie_out=nullptr);
-    virtual bool RenderPage(HDC hDC, RectI screenRect, int pageNo, float zoom, int rotation=0,
-                         RectD *pageRect=nullptr, RenderTarget target=Target_View, AbortCookie **cookie_out=nullptr);
 
     virtual PointD Transform(PointD pt, int pageNo, float zoom, int rotation, bool inverse=false);
     virtual RectD Transform(RectD rect, int pageNo, float zoom, int rotation, bool inverse=false);
@@ -93,12 +92,13 @@ public:
         return fileName ? (unsigned char *)file::ReadAll(fileName, cbCount) : nullptr;
     }
     virtual bool SaveFileAs(const WCHAR *copyFileName, bool includeUserAnnots=false) {
+        UNUSED(includeUserAnnots);
         return fileName ? CopyFile(fileName, copyFileName, FALSE) : false;
     }
-    virtual WCHAR * ExtractPageText(int pageNo, const WCHAR *lineSep, RectI **coords_out=nullptr,
+    virtual WCHAR * ExtractPageText(int pageNo, const WCHAR *lineSep, RectI **coordsOut=nullptr,
                                     RenderTarget target=Target_View);
     // make RenderCache request larger tiles than per default
-    virtual bool HasClipOptimizations(int pageNo) { return false; }
+    virtual bool HasClipOptimizations(int pageNo) { UNUSED(pageNo);  return false; }
     virtual PageLayoutType PreferredLayout() { return Layout_Book; }
 
     virtual bool SupportsAnnotation(bool forSaving=false) const { return !forSaving; }
@@ -109,7 +109,7 @@ public:
 
     virtual PageDestination *GetNamedDest(const WCHAR *name);
 
-    virtual bool BenchLoadPage(int pageNo) { return true; }
+    virtual bool BenchLoadPage(int pageNo) { UNUSED(pageNo); return true; }
 
 protected:
     WCHAR *fileName;
@@ -280,6 +280,7 @@ PointD EbookEngine::Transform(PointD pt, int pageNo, float zoom, int rotation, b
 
 RectD EbookEngine::Transform(RectD rect, int pageNo, float zoom, int rotation, bool inverse)
 {
+    UNUSED(pageNo);
     geomutil::RectT<REAL> rcF = rect.Convert<REAL>();
     PointF pts[2] = { PointF(rcF.x, rcF.y), PointF(rcF.x + rcF.dx, rcF.y + rcF.dy) };
     Matrix m;
@@ -288,28 +289,6 @@ RectD EbookEngine::Transform(RectD rect, int pageNo, float zoom, int rotation, b
         m.Invert();
     m.TransformPoints(pts, 2);
     return RectD::FromXY(pts[0].X, pts[0].Y, pts[1].X, pts[1].Y);
-}
-
-RenderedBitmap *EbookEngine::RenderBitmap(int pageNo, float zoom, int rotation, RectD *pageRect, RenderTarget target, AbortCookie **cookie_out)
-{
-    RectD pageRc = pageRect ? *pageRect : PageMediabox(pageNo);
-    RectI screen = Transform(pageRc, pageNo, zoom, rotation).Round();
-    screen.Offset(-screen.x, -screen.y);
-
-    HANDLE hMap = nullptr;
-    HBITMAP hbmp = CreateMemoryBitmap(screen.Size(), &hMap);
-    HDC hDC = CreateCompatibleDC(nullptr);
-    DeleteObject(SelectObject(hDC, hbmp));
-
-    bool ok = RenderPage(hDC, screen, pageNo, zoom, rotation, pageRect, target, cookie_out);
-    DeleteDC(hDC);
-    if (!ok) {
-        DeleteObject(hbmp);
-        CloseHandle(hMap);
-        return nullptr;
-    }
-
-    return new RenderedBitmap(hbmp, screen.Size(), hMap);
 }
 
 // TODO: use AdjustLightness instead to compensate for the alpha?
@@ -376,29 +355,36 @@ static void DrawAnnotations(Graphics& g, Vec<PageAnnotation>& userAnnots, int pa
     }
 }
 
-bool EbookEngine::RenderPage(HDC hDC, RectI screenRect, int pageNo, float zoom, int rotation, RectD *pageRect, RenderTarget target, AbortCookie **cookie_out)
+RenderedBitmap *EbookEngine::RenderBitmap(int pageNo, float zoom, int rotation, RectD *pageRect, RenderTarget target, AbortCookie **cookieOut)
 {
+    UNUSED(target);
     RectD pageRc = pageRect ? *pageRect : PageMediabox(pageNo);
     RectI screen = Transform(pageRc, pageNo, zoom, rotation).Round();
+    PointI screenTL = screen.TL();
+    screen.Offset(-screen.x, -screen.y);
+
+    HANDLE hMap = nullptr;
+    HBITMAP hbmp = CreateMemoryBitmap(screen.Size(), &hMap);
+    HDC hDC = CreateCompatibleDC(nullptr);
+    DeleteObject(SelectObject(hDC, hbmp));
 
     Graphics g(hDC);
     mui::InitGraphicsMode(&g);
 
     Color white(0xFF, 0xFF, 0xFF);
-    Rect screenR(screenRect.ToGdipRect());
-    g.SetClip(screenR);
-    screenR.Inflate(1, 1);
     SolidBrush tmpBrush(white);
+    Rect screenR(screen.ToGdipRect());
+    screenR.Inflate(1, 1);
     g.FillRectangle(&tmpBrush, screenR);
 
     Matrix m;
     GetTransform(m, zoom, rotation);
-    m.Translate((float)(screenRect.x - screen.x), (float)(screenRect.y - screen.y), MatrixOrderAppend);
+    m.Translate((REAL)-screenTL.x, (REAL)-screenTL.y, MatrixOrderAppend);
     g.SetTransform(&m);
 
     EbookAbortCookie *cookie = nullptr;
-    if (cookie_out)
-        *cookie_out = cookie = new EbookAbortCookie();
+    if (cookieOut)
+        *cookieOut = cookie = new EbookAbortCookie();
 
     ScopedCritSec scope(&pagesAccess);
 
@@ -406,8 +392,15 @@ bool EbookEngine::RenderPage(HDC hDC, RectI screenRect, int pageNo, float zoom, 
     DrawHtmlPage(&g, textDraw, GetHtmlPage(pageNo), pageBorder, pageBorder, false, Color((ARGB)Color::Black), cookie ? &cookie->abort : nullptr);
     DrawAnnotations(g, userAnnots, pageNo);
     delete textDraw;
+    DeleteDC(hDC);
 
-    return !(cookie && cookie->abort);
+    if (cookie && cookie->abort) {
+        DeleteObject(hbmp);
+        CloseHandle(hMap);
+        return nullptr;
+    }
+
+    return new RenderedBitmap(hbmp, screen.Size(), hMap);
 }
 
 static RectI GetInstrBbox(DrawInstr& instr, float pageBorder)
@@ -417,8 +410,9 @@ static RectI GetInstrBbox(DrawInstr& instr, float pageBorder)
     return bbox.Round();
 }
 
-WCHAR *EbookEngine::ExtractPageText(int pageNo, const WCHAR *lineSep, RectI **coords_out, RenderTarget target)
+WCHAR *EbookEngine::ExtractPageText(int pageNo, const WCHAR *lineSep, RectI **coordsOut, RenderTarget target)
 {
+    UNUSED(target);
     ScopedCritSec scope(&pagesAccess);
 
     str::Str<WCHAR> content;
@@ -488,9 +482,9 @@ WCHAR *EbookEngine::ExtractPageText(int pageNo, const WCHAR *lineSep, RectI **co
         coords.AppendBlanks(str::Len(lineSep));
     }
 
-    if (coords_out) {
+    if (coordsOut) {
         CrashIf(coords.Count() != content.Count());
-        *coords_out = coords.StealData();
+        *coordsOut = coords.StealData();
     }
     return content.StealData();
 }
@@ -813,6 +807,7 @@ unsigned char *EpubEngineImpl::GetFileData(size_t *cbCount)
 
 bool EpubEngineImpl::SaveFileAs(const WCHAR *copyFileName, bool includeUserAnnots)
 {
+    UNUSED(includeUserAnnots);
     if (stream) {
         size_t len;
         ScopedMem<void> data(GetDataFromStream(stream, &len));
@@ -1346,15 +1341,15 @@ void ChmFormatter::HandleTagLink(HtmlToken *t)
 
 class ChmEmbeddedDest;
 
-class Chm2EngineImpl : public EbookEngine {
+class ChmEngineImpl : public EbookEngine {
     friend ChmEmbeddedDest;
 
 public:
-    Chm2EngineImpl() : EbookEngine(), doc(nullptr), dataCache(nullptr) {
+    ChmEngineImpl() : EbookEngine(), doc(nullptr), dataCache(nullptr) {
         // ISO 216 A4 (210mm x 297mm)
         pageRect = RectD(0, 0, 8.27 * GetFileDPI(), 11.693 * GetFileDPI());
     }
-    virtual ~Chm2EngineImpl() {
+    virtual ~ChmEngineImpl() {
         delete dataCache;
         delete doc;
     }
@@ -1453,13 +1448,14 @@ public:
                 Visit(nullptr, url, -1);
             }
         }
-        FreeVecMembers(*paths);
+        paths->FreeMembers();
         delete paths;
 
         return html.StealData();
     }
 
     virtual void Visit(const WCHAR *name, const WCHAR *url, int level) {
+        UNUSED(name); UNUSED(level);
         if (!url || url::IsAbsolute(url))
             return;
         ScopedMem<WCHAR> plainUrl(url::GetFullPath(url));
@@ -1476,7 +1472,7 @@ public:
     }
 };
 
-bool Chm2EngineImpl::Load(const WCHAR *fileName)
+bool ChmEngineImpl::Load(const WCHAR *fileName)
 {
     this->fileName = str::Dup(fileName);
     doc = ChmDoc::CreateFromFile(fileName);
@@ -1502,7 +1498,7 @@ bool Chm2EngineImpl::Load(const WCHAR *fileName)
     return pages->Count() > 0;
 }
 
-PageDestination *Chm2EngineImpl::GetNamedDest(const WCHAR *name)
+PageDestination *ChmEngineImpl::GetNamedDest(const WCHAR *name)
 {
     PageDestination *dest = EbookEngine::GetNamedDest(name);
     if (!dest) {
@@ -1518,7 +1514,7 @@ PageDestination *Chm2EngineImpl::GetNamedDest(const WCHAR *name)
     return dest;
 }
 
-DocTocItem *Chm2EngineImpl::GetTocTree()
+DocTocItem *ChmEngineImpl::GetTocTree()
 {
     EbookTocBuilder builder(this);
     doc->ParseToc(&builder);
@@ -1537,11 +1533,11 @@ DocTocItem *Chm2EngineImpl::GetTocTree()
 }
 
 class ChmEmbeddedDest : public PageDestination {
-    Chm2EngineImpl *engine;
+    ChmEngineImpl *engine;
     ScopedMem<char> path;
 
 public:
-    ChmEmbeddedDest(Chm2EngineImpl *engine, const char *path) : engine(engine), path(str::Dup(path)) { }
+    ChmEmbeddedDest(ChmEngineImpl *engine, const char *path) : engine(engine), path(str::Dup(path)) { }
 
     virtual PageDestType GetDestType() const { return Dest_LaunchEmbedded; }
     virtual int GetDestPageNo() const { return 0; }
@@ -1551,7 +1547,7 @@ public:
     virtual bool SaveEmbedded(LinkSaverUI& saveUI) { return engine->SaveEmbedded(saveUI, path); }
 };
 
-PageElement *Chm2EngineImpl::CreatePageLink(DrawInstr *link, RectI rect, int pageNo)
+PageElement *ChmEngineImpl::CreatePageLink(DrawInstr *link, RectI rect, int pageNo)
 {
     PageElement *linkEl = EbookEngine::CreatePageLink(link, rect, pageNo);
     if (linkEl)
@@ -1568,7 +1564,7 @@ PageElement *Chm2EngineImpl::CreatePageLink(DrawInstr *link, RectI rect, int pag
     return new EbookLink(link, rect, dest, pageNo);
 }
 
-bool Chm2EngineImpl::SaveEmbedded(LinkSaverUI& saveUI, const char *path)
+bool ChmEngineImpl::SaveEmbedded(LinkSaverUI& saveUI, const char *path)
 {
     size_t len;
     ScopedMem<unsigned char> data(doc->GetData(path, &len));
@@ -1577,9 +1573,9 @@ bool Chm2EngineImpl::SaveEmbedded(LinkSaverUI& saveUI, const char *path)
     return saveUI.SaveEmbedded(data, len);
 }
 
-BaseEngine *Chm2EngineImpl::CreateFromFile(const WCHAR *fileName)
+BaseEngine *ChmEngineImpl::CreateFromFile(const WCHAR *fileName)
 {
-    Chm2EngineImpl *engine = new Chm2EngineImpl();
+    ChmEngineImpl *engine = new ChmEngineImpl();
     if (!engine->Load(fileName)) {
         delete engine;
         return nullptr;
@@ -1587,7 +1583,7 @@ BaseEngine *Chm2EngineImpl::CreateFromFile(const WCHAR *fileName)
     return engine;
 }
 
-namespace Chm2Engine {
+namespace ChmEngine {
 
 bool IsSupportedFile(const WCHAR *fileName, bool sniff)
 {
@@ -1596,7 +1592,7 @@ bool IsSupportedFile(const WCHAR *fileName, bool sniff)
 
 BaseEngine *CreateFromFile(const WCHAR *fileName)
 {
-    return Chm2EngineImpl::CreateFromFile(fileName);
+    return ChmEngineImpl::CreateFromFile(fileName);
 }
 
 }

@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 // note: include BaseUtil.h instead of including directly
@@ -102,6 +102,16 @@ public:
         EnsureCapCrash(orig.cap);
         // use memcpy, as Vec only supports POD types
         memcpy(els, orig.els, sizeof(T) * (len = orig.len));
+    }
+
+    // this frees all elements and clears the array.
+    // only applicable where T is a pointer. Otherwise will fail to compile
+    void FreeMembers() {
+        for (size_t i = 0; i < len; i++) {
+            auto s = els[i];
+            free(s);
+        }
+        Reset();
     }
 
     Vec& operator=(const Vec& that) {
@@ -310,16 +320,6 @@ public:
     }
 };
 
-// only suitable for T that are pointers that were malloc()ed
-template <typename T>
-inline void FreeVecMembers(Vec<T>& v)
-{
-    for (T& el : v) {
-        free(el);
-    }
-    v.Reset();
-}
-
 // only suitable for T that are pointers to C++ objects
 template <typename T>
 inline void DeleteVecMembers(Vec<T>& v)
@@ -387,6 +387,13 @@ public:
     {
         return Vec<T>::els;
     }
+
+    T LastChar() const {
+        if (len == 0) {
+            return 0;
+        }
+        return At(len - 1);
+    }
 };
 
 }
@@ -404,12 +411,12 @@ public:
         }
     }
     ~WStrVec() {
-        FreeVecMembers(*this);
+        FreeMembers();
     }
 
     WStrVec& operator=(const WStrVec& that) {
         if (this != &that) {
-            FreeVecMembers(*this);
+            FreeMembers();
             Vec::operator=(that);
             for (size_t i = 0; i < that.len; i++) {
                 if (At(i))
@@ -420,8 +427,7 @@ public:
     }
 
     void Reset() {
-        // FreeVecMembers calls Vec::Reset()
-        FreeVecMembers(*this);
+        FreeMembers();
     }
 
     WCHAR *Join(const WCHAR *joint=nullptr) {

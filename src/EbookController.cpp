@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -197,12 +197,14 @@ static void DeletePages(Vec<HtmlPage*>** toDeletePtr)
     *toDeletePtr = nullptr;
 }
 
-EbookController::EbookController(EbookControls *ctrls, ControllerCallback *cb) :
-    Controller(cb), ctrls(ctrls), pages(nullptr), incomingPages(nullptr),
+EbookController::EbookController(Doc doc, EbookControls *ctrls, ControllerCallback *cb) :
+    doc(doc), Controller(cb), ctrls(ctrls), pages(nullptr), incomingPages(nullptr),
     currPageNo(0), pageSize(0, 0), formattingThread(nullptr), formattingThreadNo(-1),
-    currPageReparseIdx(0), handleMsgs(true), pageAnchorIds(nullptr), pageAnchorIdxs(nullptr),
+    currPageReparseIdx(0), handleMsgs(false), pageAnchorIds(nullptr), pageAnchorIdxs(nullptr),
     navHistoryIx(0)
 {
+    CrashIf(!doc.IsDocLoaded());
+
     EventMgr *em = ctrls->mainWnd->evtMgr;
     // TODO: do I need lambada here, can I just pass EbookController::ClickedNext directly?
     em->EventsForName("next")->Clicked = [=](Control *c, int x, int y) {
@@ -233,7 +235,6 @@ EbookController::EbookController(EbookControls *ctrls, ControllerCallback *cb) :
 EbookController::~EbookController()
 {
     StopFormattingThread();
-    EventMgr *evtMgr = ctrls->mainWnd->evtMgr;
     // we must manually disconnect all events becuase evtMgr is
     // destroyed after EbookController, and EbookController destructor
     // will disconnect slots without deleting them, causing leaks
@@ -313,7 +314,7 @@ void EbookController::HandlePagesFromEbookLayout(EbookFormattingData *ft)
     if (formattingThreadNo != ft->threadNo) {
         // this is a message from cancelled thread, we can disregard
         lf("EbookController::HandlePagesFromEbookLayout() thread msg discarded, curr thread: %d, sending thread: %d", formattingThreadNo, ft->threadNo);
-        delete ft;
+        DeleteEbookFormattingData(ft);
         return;
     }
     //lf("EbookController::HandlePagesFromEbookLayout() %d pages, ft=0x%x", ft->pageCount, (int)ft);
@@ -341,6 +342,8 @@ void EbookController::HandlePagesFromEbookLayout(EbookFormattingData *ft)
         StopFormattingThread();
     }
     UpdateStatus();
+    // don't call DeleteEbookFormattingData since
+    // ft->pages are now owned by incomingPages or pages
     delete ft;
 }
 
@@ -377,6 +380,7 @@ void EbookController::TriggerLayout()
 
 void EbookController::SizeChangedPage(Control *c, int dx, int dy)
 {
+    UNUSED(dx); UNUSED(dy);
     CrashIf(!(c == ctrls->pagesLayout->GetPage1() || c==ctrls->pagesLayout->GetPage2()));
     // delay re-layout so that we don't unnecessarily do the
     // work as long as the user is still resizing the window
@@ -387,19 +391,22 @@ void EbookController::SizeChangedPage(Control *c, int dx, int dy)
 
 void EbookController::ClickedNext(Control *c, int x, int y)
 {
+    UNUSED(c);  UNUSED(x); UNUSED(y);
     //CrashIf(c != ctrls->next);
     GoToNextPage();
 }
 
 void EbookController::ClickedPrev(Control *c, int x, int y)
 {
+    UNUSED(c);  UNUSED(x); UNUSED(y);
     //CrashIf(c != ctrls->prev);
     GoToPrevPage();
 }
 
-// (x, y) is in the coordinates of w
+// (x, y) is in the coordinates of c
 void EbookController::ClickedProgress(Control *c, int x, int y)
 {
+    UNUSED(x); UNUSED(y);
     CrashIf(c != ctrls->progress);
     float perc = ctrls->progress->GetPercAt(x);
     int pageCount = (int)GetPages()->Count();
@@ -539,7 +546,7 @@ void EbookController::GoToPage(int pageNo, bool addNavPoint)
     }
     UpdateStatus();
     // update the ToC selection
-    cb->PageNoChanged(pageNo);
+    cb->PageNoChanged(this, pageNo);
 }
 
 bool EbookController::GoToNextPage()
@@ -553,26 +560,25 @@ bool EbookController::GoToNextPage()
 
 bool EbookController::GoToPrevPage(bool toBottom)
 {
+    UNUSED(toBottom);
     int dist = IsDoublePage() ? 2 : 1;
-    if (currPageNo - dist < 1)
+    if (currPageNo == 1)
         return false;
     GoToPage(currPageNo - dist, false);
     return true;
 }
 
-void EbookController::SetDoc(Doc newDoc, int startReparseIdxArg, DisplayMode displayMode)
+void EbookController::StartLayouting(int startReparseIdxArg, DisplayMode displayMode)
 {
-    CrashIf(!newDoc.IsDocLoaded());
+    if ((size_t)startReparseIdxArg >= doc.GetHtmlDataSize())
+        startReparseIdxArg = 0;
     currPageReparseIdx = startReparseIdxArg;
-    if ((size_t)currPageReparseIdx >= newDoc.GetHtmlDataSize())
-        currPageReparseIdx = 0;
-    CloseCurrentDocument();
-
-    doc = newDoc;
     // displayMode could be any value if alternate UI was used, we have to limit it to
     // either DM_SINGLE_PAGE or DM_FACING
     if (DM_AUTOMATIC == displayMode)
         displayMode = gGlobalPrefs->defaultDisplayModeEnum;
+
+    EnableMessageHandling(true);
     SetDisplayMode(displayMode);
     TriggerLayout();
     UpdateStatus();
@@ -670,6 +676,7 @@ void EbookController::CreateThumbnail(SizeI size, const std::function<void(Rende
 
 void EbookController::SetDisplayMode(DisplayMode mode, bool keepContinuous)
 {
+    UNUSED(keepContinuous);
     bool newDouble = !IsSingle(mode);
     if (IsDoublePage() == newDouble)
         return;
@@ -859,6 +866,7 @@ void EbookController::UpdateDisplayState(DisplayState *ds)
 
 void EbookController::SetViewPortSize(SizeI size)
 {
+    UNUSED(size);
     // relayouting gets the size from the canvas hwnd
     ctrls->mainWnd->RequestLayout();
 }
@@ -945,10 +953,20 @@ void EbookController::CopyNavHistory(EbookController& orig)
     navHistoryIx = orig.navHistoryIx;
 }
 
-EbookController *EbookController::Create(HWND hwnd, ControllerCallback *cb, FrameRateWnd *frameRateWnd)
+EbookController *EbookController::Create(Doc doc, HWND hwnd, ControllerCallback *cb, FrameRateWnd *frameRateWnd)
 {
     EbookControls *ctrls = CreateEbookControls(hwnd, frameRateWnd);
     if (!ctrls)
         return nullptr;
-    return new EbookController(ctrls, cb);
+    return new EbookController(doc, ctrls, cb);
+}
+
+// not a destructor so that EbookFormattingData don't have to be exposed in EbookController.h
+// and so that EbookFormattingData::pages aren't always deleted (when ownership has been passed on)
+void EbookController::DeleteEbookFormattingData(EbookFormattingData *data)
+{
+    for (size_t i = 0; i < data->pageCount; i++) {
+        delete data->pages[i];
+    }
+    delete data;
 }

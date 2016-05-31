@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 /*
@@ -20,7 +20,8 @@ The installer is good enough for production but it doesn't mean it couldn't be i
 #endif
 
 #include "BaseUtil.h"
-#include <Tlhelp32.h>
+#include "WinDynCalls.h"
+#include <tlhelp32.h>
 #include <io.h>
 #include "FileUtil.h"
 #include "FileTransactions.h"
@@ -61,6 +62,8 @@ HFONT           gFontDefault;
 bool            gShowOptions = false;
 bool            gForceCrash = false;
 WCHAR *         gMsgError = nullptr;
+int             gBottomPartDy = 0;
+int             gButtonDy = 0;
 
 static WStrVec          gProcessesToClose;
 static float            gUiDPIFactor = 1.0f;
@@ -139,34 +142,52 @@ void SetMsg(const WCHAR *msg, Color color)
 
 #define TEN_SECONDS_IN_MS 10*1000
 
-// Kill a process with given <processId> if it's loaded from <processPath>.
-// If <waitUntilTerminated> is TRUE, will wait until process is fully killed.
-// Returns TRUE if killed a process
-static BOOL KillProcIdWithName(DWORD processId, const WCHAR *processPath, BOOL waitUntilTerminated)
+static bool IsProcWithName(DWORD processId, const WCHAR *modulePath)
 {
-    ScopedHandle hProcess(OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_TERMINATE, FALSE, processId));
     ScopedHandle hModSnapshot(CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, processId));
-    if (!hProcess || INVALID_HANDLE_VALUE == hModSnapshot)
-        return FALSE;
+    if (!hModSnapshot.IsValid())
+        return false;
 
-    MODULEENTRY32 me32;
+    MODULEENTRY32W me32 = { 0 };
     me32.dwSize = sizeof(me32);
-    if (!Module32First(hModSnapshot, &me32))
-        return FALSE;
-    if (!path::IsSame(processPath, me32.szExePath))
-        return FALSE;
+    BOOL ok = Module32FirstW(hModSnapshot, &me32);
+    while (ok) {
+        if (path::IsSame(modulePath, me32.szExePath))
+            return true;
+        ok = Module32NextW(hModSnapshot, &me32);
+    }
+    return false;
+}
+
+// Kill a process with given <processId> if it has a module (dll or exe) <modulePath>.
+// If <waitUntilTerminated> is true, will wait until process is fully killed.
+// Returns TRUE if killed a process
+static bool KillProcIdWithName(DWORD processId, const WCHAR *modulePath, bool waitUntilTerminated)
+{
+    if (!IsProcWithName(processId, modulePath))
+        return false;
+
+    BOOL inheritHandle = FALSE;
+    // Note: do I need PROCESS_QUERY_INFORMATION and PROCESS_VM_READ?
+    DWORD dwAccess = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_TERMINATE;
+    ScopedHandle hProcess(OpenProcess(dwAccess, inheritHandle, processId));
+    if (!hProcess.IsValid())
+        return false;
 
     BOOL killed = TerminateProcess(hProcess, 0);
     if (!killed)
-        return FALSE;
+        return false;
 
     if (waitUntilTerminated)
         WaitForSingleObject(hProcess, TEN_SECONDS_IN_MS);
 
-    return TRUE;
+    return  true;
 }
 
-int KillProcess(const WCHAR *processPath, BOOL waitUntilTerminated)
+// returns number of killed processes that have a module (exe or dll) with a given
+// modulePath
+// returns -1 on error, 0 if no matching processes
+int KillProcess(const WCHAR *modulePath, bool waitUntilTerminated)
 {
     ScopedHandle hProcSnapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
     if (INVALID_HANDLE_VALUE == hProcSnapshot)
@@ -179,7 +200,7 @@ int KillProcess(const WCHAR *processPath, BOOL waitUntilTerminated)
 
     int killCount = 0;
     do {
-        if (KillProcIdWithName(pe32.th32ProcessID, processPath, waitUntilTerminated))
+        if (KillProcIdWithName(pe32.th32ProcessID, modulePath, waitUntilTerminated))
             killCount++;
     } while (Process32Next(hProcSnapshot, &pe32));
 
@@ -270,9 +291,19 @@ WCHAR *GetShortcutPath(bool allUsers)
 void KillSumatra()
 {
     ScopedMem<WCHAR> exePath(GetInstalledExePath());
-    KillProcess(exePath, TRUE);
+    KillProcess(exePath, true);
 }
 
+#if 1
+static HFONT CreateDefaultGuiFont()
+{
+    NONCLIENTMETRICSW ncm;
+    ncm.cbSize = sizeof(ncm);
+    SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0);
+    HFONT f = CreateFontIndirectW(&ncm.lfMenuFont);
+    return f;
+}
+#else
 static HFONT CreateDefaultGuiFont()
 {
     HDC hdc = GetDC(nullptr);
@@ -280,6 +311,7 @@ static HFONT CreateDefaultGuiFont()
     ReleaseDC(nullptr, hdc);
     return font;
 }
+#endif
 
 int dpiAdjust(int value)
 {
@@ -289,10 +321,6 @@ int dpiAdjust(int value)
 void InvalidateFrame()
 {
     ClientRect rc(gHwndFrame);
-    if (gShowOptions)
-        rc.dy = TITLE_PART_DY;
-    else
-        rc.dy -= BOTTOM_PART_DY;
     RECT rcTmp = rc.ToRECT();
     InvalidateRect(gHwndFrame, &rcTmp, FALSE);
 }
@@ -312,11 +340,9 @@ static bool RegisterServerDLL(const WCHAR *dllPath, bool install, const WCHAR *a
 
     // make sure that the DLL can find any DLLs it depends on and
     // which reside in the same directory (in this case: libmupdf.dll)
-    typedef BOOL (WINAPI *SetDllDirectoryProcW)(LPCWSTR);
-    SetDllDirectoryProcW _SetDllDirectory = (SetDllDirectoryProcW)LoadDllFunc(L"Kernel32.dll", "SetDllDirectoryW");
-    if (_SetDllDirectory) {
+    if (DynSetDllDirectoryW) {
         ScopedMem<WCHAR> dllDir(path::GetDir(dllPath));
-        _SetDllDirectory(dllDir);
+        DynSetDllDirectoryW(dllDir);
     }
 
     bool ok = false;
@@ -340,8 +366,8 @@ static bool RegisterServerDLL(const WCHAR *dllPath, bool install, const WCHAR *a
         FreeLibrary(lib);
     }
 
-    if (_SetDllDirectory)
-        _SetDllDirectory(L"");
+    if (DynSetDllDirectoryW)
+        DynSetDllDirectoryW(L"");
 
     OleUninitialize();
 
@@ -492,27 +518,52 @@ void UninstallPdfPreviewer()
         NotifyFailed(_TR("Couldn't uninstall PDF previewer"));
 }
 
-HWND CreateDefaultButton(HWND hwndParent, const WCHAR *label, int width, int id)
+SIZE GetIdealButtonSize(HWND hwnd) {
+    // adjust to real size and position to the right
+    SIZE s;
+    Button_GetIdealSize(hwnd, &s);
+    // add padding
+    s.cx += dpiAdjust(8) * 2;
+    s.cy += dpiAdjust(2) * 2;
+    return s;
+}
+
+SIZE SetButtonTextAndResize(HWND hwnd, const WCHAR * s)
 {
-    RectI rc(0, 0, dpiAdjust(width), PUSH_BUTTON_DY);
+    win::SetText(hwnd, s);
+    SIZE size = GetIdealButtonSize(hwnd);
+    SetWindowPos(hwnd, nullptr, 0, 0, size.cx, size.cy, SWP_NOMOVE | SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    return size;
+}
 
-    // TODO: determine the sizes of buttons by measuring their real size
-    // and adjust size of the window appropriately
+// Creates a button that has a right size for it's text, 
+HWND CreateButton(HWND hwndParent, const WCHAR *s, int id, DWORD style, SIZE& sizeOut)
+{
+    HMENU idMenu = (HMENU) (UINT_PTR) id;
+    style |= WS_CHILD | WS_TABSTOP;
+    HWND hwnd = CreateWindowExW(0, WC_BUTTON, L"", style,
+        0, 0, 100, 20, hwndParent,
+        idMenu, GetModuleHandle(nullptr), nullptr);
+    SetWindowFont(hwnd, gFontDefault, TRUE);
+    sizeOut = SetButtonTextAndResize(hwnd, s);
+    return hwnd;
+}
+
+HWND CreateDefaultButton(HWND hwndParent, const WCHAR *s, int id)
+{
+    SIZE size;
+    HWND hwnd = CreateButton(hwndParent, s, id, BS_DEFPUSHBUTTON, size);
+
     ClientRect r(hwndParent);
-    rc.x = r.dx - rc.dx - WINDOW_MARGIN;
-    rc.y = r.dy - rc.dy - WINDOW_MARGIN;
-    HWND button = CreateWindow(WC_BUTTON, label,
-                        BS_DEFPUSHBUTTON | WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                        rc.x, rc.y, rc.dx, rc.dy, hwndParent,
-                        (HMENU)id, GetModuleHandle(nullptr), nullptr);
-    SetWindowFont(button, gFontDefault, TRUE);
-
-    return button;
+    int x = r.dx - size.cx - WINDOW_MARGIN;
+    int y = r.dy - size.cy - WINDOW_MARGIN;
+    SetWindowPos(hwnd, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    return hwnd;
 }
 
 void CreateButtonExit(HWND hwndParent)
 {
-    gHwndButtonExit = CreateDefaultButton(hwndParent, _TR("Close"), 80, ID_BUTTON_EXIT);
+    gHwndButtonExit = CreateDefaultButton(hwndParent, _TR("Close"), ID_BUTTON_EXIT);
 }
 
 void OnButtonExit()
@@ -740,7 +791,9 @@ static void DrawFrame2(Graphics &g, RectI r)
     Font f(L"Impact", 40, FontStyleRegular);
     CalcLettersLayout(g, &f, r.dx);
 
-    SolidBrush bgBrush(Color(0xff, 0xf2, 0));
+    Gdiplus::Color bgCol;
+    bgCol.SetFromCOLORREF(WIN_BG_COLOR);
+    SolidBrush bgBrush(bgCol);
     Rect r2(r.ToGdipRect());
     r2.Inflate(1, 1);
     g.FillRectangle(&bgBrush, r2);
@@ -758,31 +811,14 @@ static void DrawFrame2(Graphics &g, RectI r)
         DrawMessage(g, gMsgError, msgY, (REAL)r.dx, COLOR_MSG_FAILED);
 }
 
-static void DrawFrame(HWND hwnd, HDC dc, PAINTSTRUCT *ps)
+static void DrawFrame(HWND hwnd, HDC dc, PAINTSTRUCT *)
 {
-    RECT rc;
-    GetClientRect(hwnd, &rc);
-    if (gShowOptions)
-        rc.top = TITLE_PART_DY;
-    else
-        rc.top = rc.bottom - BOTTOM_PART_DY;
-    RECT rcTmp;
-    if (IntersectRect(&rcTmp, &rc, &ps->rcPaint)) {
-        HBRUSH brushNativeBg = CreateSolidBrush(GetSysColor(COLOR_BTNFACE));
-        FillRect(dc, &rc, brushNativeBg);
-        DeleteObject(brushNativeBg);
-    }
-
     // TODO: cache bmp object?
     Graphics g(dc);
-    ClientRect rc2(hwnd);
-    if (gShowOptions)
-        rc2.dy = TITLE_PART_DY;
-    else
-        rc2.dy -= BOTTOM_PART_DY;
-    Bitmap bmp(rc2.dx, rc2.dy, &g);
+    ClientRect rc(hwnd);
+    Bitmap bmp(rc.dx, rc.dy, &g);
     Graphics g2((Image*)&bmp);
-    DrawFrame2(g2, rc2);
+    DrawFrame2(g2, rc);
     g.DrawImage(&bmp, 0, 0);
 }
 
@@ -793,6 +829,8 @@ static void OnPaintFrame(HWND hwnd)
     DrawFrame(hwnd, dc, &ps);
     EndPaint(hwnd, &ps);
 }
+
+HBRUSH ghbrBackground = nullptr;
 
 static LRESULT CALLBACK WndProcFrame(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -809,6 +847,17 @@ static LRESULT CALLBACK WndProcFrame(HWND hwnd, UINT message, WPARAM wParam, LPA
 #endif
             OnCreateWindow(hwnd);
             break;
+
+        case WM_CTLCOLORSTATIC:
+        {
+            if (ghbrBackground == nullptr) {
+                ghbrBackground = CreateSolidBrush(RGB(0xff, 0xf2, 0));
+            }
+            HDC hdc = (HDC) wParam;
+            SetTextColor(hdc, RGB(0, 0, 0));
+            SetBkMode(hdc, TRANSPARENT);
+            return (LRESULT) ghbrBackground;
+        }
 
         case WM_DESTROY:
             PostQuitMessage(0);
@@ -858,7 +907,7 @@ static bool RegisterWinClass()
     return atom != 0;
 }
 
-static BOOL InstanceInit(int nCmdShow)
+static BOOL InstanceInit()
 {
     gFontDefault = CreateDefaultGuiFont();
     gUiDPIFactor = (float)DpiGet(HWND_DESKTOP)->dpiX / 96.f;
@@ -936,7 +985,7 @@ static void ParseCommandLine(WCHAR *cmdLine)
             gGlobalData.registerAsDefault = true;
         else if (is_arg_with_param("opt")) {
             WCHAR *opts = argList.At(++i);
-            str::ToLower(opts);
+            str::ToLowerInPlace(opts);
             str::TransChars(opts, L" ;", L",,");
             WStrVec optlist;
             optlist.Split(opts, L",", true);
@@ -975,8 +1024,8 @@ static void ParseCommandLine(WCHAR *cmdLine)
 #define CRASH_DUMP_FILE_NAME         L"suminstaller.dmp"
 
 // no-op but must be defined for CrashHandler.cpp
-void CrashHandlerMessage() { }
-void GetStressTestInfo(str::Str<char>* s) { }
+void ShowCrashHandlerMessage() { }
+void GetStressTestInfo(str::Str<char>* s) { UNUSED(s); }
 
 void GetProgramInfo(str::Str<char>& s)
 {
@@ -984,11 +1033,18 @@ void GetProgramInfo(str::Str<char>& s)
 #ifdef SVN_PRE_RELEASE_VER
     s.AppendFmt(" pre-release");
 #endif
+    if (IsProcess64()) {
+        s.Append(" 64-bit");
+    }
 #ifdef DEBUG
-    if (!str::EndsWith(s.Get(), " (dbg)"))
+    if (!str::Find(s.Get(), " (dbg)"))
         s.Append(" (dbg)");
 #endif
     s.Append("\r\n");
+#if defined(GIT_COMMIT_ID)
+    const char *gitSha1 = QM(GIT_COMMIT_ID);
+    s.AppendFmt("Git: %s (https://github.com/sumatrapdfreader/sumatrapdf/tree/%s)\r\n", gitSha1, gitSha1);
+#endif
 }
 
 bool CrashHandlerCanUseNet()
@@ -1015,9 +1071,11 @@ static void InstallInstallerCrashHandler()
 int APIENTRY WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/,
                      LPSTR /* lpCmdLine*/, int nCmdShow)
 {
+    UNUSED(nCmdShow);
     int ret = 1;
 
     SetErrorMode(SEM_NOOPENFILEERRORBOX | SEM_FAILCRITICALERRORS);
+    InitDynCalls();
 
     ScopedCom com;
     InitAllCommonControls();
@@ -1059,7 +1117,7 @@ int APIENTRY WinMain(HINSTANCE /*hInstance*/, HINSTANCE /*hPrevInstance*/,
     if (!RegisterWinClass())
         goto Exit;
 
-    if (!InstanceInit(nCmdShow))
+    if (!InstanceInit())
         goto Exit;
 
     ret = RunApp();

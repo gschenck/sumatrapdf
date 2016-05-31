@@ -1,4 +1,4 @@
-/* Copyright 2014 the unarr project authors (see AUTHORS file).
+/* Copyright 2015 the unarr project authors (see AUTHORS file).
    License: LGPLv3 */
 
 #include "zip.h"
@@ -38,7 +38,7 @@ bool zip_seek_to_compressed_data(ar_archive_zip *zip)
 static bool zip_parse_extra_fields(ar_archive_zip *zip, struct zip_entry *entry)
 {
     uint8_t *extra;
-    uint16_t idx;
+    uint32_t idx;
 
     if (!entry->extralen)
         return true;
@@ -110,7 +110,7 @@ off64_t zip_find_next_local_file_entry(ar_stream *stream, off64_t offset)
     int count, i;
 
     if (!ar_seek(stream, offset, SEEK_SET))
-        return false;
+        return -1;
     count = (int)ar_read(stream, data, sizeof(data));
 
     while (count >= ZIP_LOCAL_ENTRY_FIXED_SIZE) {

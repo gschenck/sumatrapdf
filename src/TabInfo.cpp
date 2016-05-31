@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -23,8 +23,8 @@
 #include "Selection.h"
 #include "Translations.h"
 
-TabInfo::TabInfo() :
-    ctrl(nullptr),
+TabInfo::TabInfo(const WCHAR *filePath) :
+    filePath(str::Dup(filePath)), ctrl(nullptr),
     showToc(false), showTocPresentation(false), tocRoot(nullptr),
     reloadOnFocus(false), watcher(nullptr), selectionOnPage(nullptr),
     prevZoomVirtual(INVALID_ZOOM), prevDisplayMode(DM_AUTOMATIC)

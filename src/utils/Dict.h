@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 namespace dict {
@@ -60,7 +60,7 @@ public:
 
     int             Intern(const char *s, bool *alreadyPresent=nullptr);
     size_t          StringsCount() const { return intToStr.Count(); }
-    const char *    GetByIndex(int n) const { return intToStr.At(n); }
+    const char *    GetByIndex(size_t n) const { return intToStr.At(n); }
 
     int             nInternCalls; // so we know how effective interning is
 };

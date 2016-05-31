@@ -1,16 +1,12 @@
-Major user-visible changes in each release:
-2.5 - text support (in it's own ui)
-2.6 - hex display (can show any file in hex/text view; it's own ui)
-
-More detailed list for 2.5:
-- refactor LoadDocument() so that more code is shared between
-  engine/ebook UIs and so that it loads documents in the
-  background thread
-- a smoother transition betwen different window types which
-  doesn't involve closing the window
-- closing last ebook window via 'x' if it has opened document
-  leaks memory
-- ???
+Some ideas for 3.2 release:
+- improve tabs (re-arrange with drag&drop, allow moving between windows)
+- background loading so that we don't stall on slow filesystem (network drives)
+- ebook improvements
+ - allow changing font size
+ - change font/bg color
+ - search
+ - text selection
+- better handle fit-width for files that have non-uniform pages
 
 It's best to make the most risky (most likely to introduce breakage) changes
 first so that there is time to stabilize the code. E.g. in 2.2, LoadDocument()

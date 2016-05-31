@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD */
 
 /* Wrappers around dbghelp.dll that load it on demand and provide
@@ -8,8 +8,7 @@
 */
 
 #include "BaseUtil.h"
-#include <dbghelp.h>
-#include <tlhelp32.h>
+#include "WinDynCalls.h"
 #include "DbgHelpDyn.h"
 #include "FileUtil.h"
 #include "WinUtil.h"
@@ -18,95 +17,11 @@
    have been loaded (invideProcess=TRUE in SymInitialize() or SymRefreshModuleList())
    doesn't work.
    I had to provide symbol path in SymInitialize() (and either invideProcess=TRUE
-   or invideProcess=FALSE and caappll SymRefreshModuleList()). There's probably
+   or invideProcess=FALSE and call SymRefreshModuleList()). There's probably
    a way to force it, but I'm happy I found a way that works.
 */
 
-// all of these symbols may not be available under Win2000
-typedef BOOL WINAPI MiniDumpWriteDumpProc(
-    HANDLE hProcess,
-    DWORD ProcessId,
-    HANDLE hFile,
-    LONG DumpType,
-    PMINIDUMP_EXCEPTION_INFORMATION ExceptionParam,
-    PMINIDUMP_USER_STREAM_INFORMATION UserStreamParam,
-    PMINIDUMP_CALLBACK_INFORMATION CallbackParam);
-
-typedef BOOL _stdcall SymInitializeWProc(
-    HANDLE hProcess,
-    PCWSTR UserSearchPath,
-    BOOL fInvadeProcess);
-
-typedef BOOL _stdcall SymInitializeProc(
-    HANDLE hProcess,
-    PCSTR UserSearchPath,
-    BOOL fInvadeProcess);
-
-typedef BOOL _stdcall SymCleanupProc(
-  HANDLE hProcess);
-
-typedef DWORD _stdcall SymGetOptionsProc();
-typedef DWORD _stdcall SymSetOptionsProc(DWORD SymOptions);
-
-typedef BOOL _stdcall StackWalk64Proc(
-    DWORD MachineType,
-    HANDLE hProcess,
-    HANDLE hThread,
-    LPSTACKFRAME64 StackFrame,
-    PVOID ContextRecord,
-    PREAD_PROCESS_MEMORY_ROUTINE64 ReadMemoryRoutine,
-    PFUNCTION_TABLE_ACCESS_ROUTINE64 FunctionTableAccessRoutine,
-    PGET_MODULE_BASE_ROUTINE64 GetModuleBaseRoutine,
-    PTRANSLATE_ADDRESS_ROUTINE64 TranslateAddress);
-
-typedef BOOL _stdcall SymFromAddrProc(
-    HANDLE hProcess,
-    DWORD64 Address,
-    PDWORD64 Displacement,
-    PSYMBOL_INFO Symbol);
-
-typedef PVOID _stdcall SymFunctionTableAccess64Proc(
-    HANDLE hProcess,
-    DWORD64 AddrBase);
-
-typedef DWORD64 _stdcall SymGetModuleBase64Proc(
-    HANDLE hProcess,
-    DWORD64 qwAddr);
-
-typedef BOOL _stdcall SymSetSearchPathWProc(
-    HANDLE hProcess,
-    PCWSTR SearchPath);
-
-typedef BOOL _stdcall SymSetSearchPathProc(
-    HANDLE hProcess,
-    PCSTR SearchPath);
-
-typedef BOOL _stdcall SymRefreshModuleListProc(
-  HANDLE hProcess);
-
-typedef BOOL _stdcall SymGetLineFromAddr64Proc(
-    HANDLE hProcess,
-    DWORD64 dwAddr,
-    PDWORD pdwDisplacement,
-    PIMAGEHLP_LINE64 Line);
-
 namespace dbghelp {
-
-static MiniDumpWriteDumpProc *          _MiniDumpWriteDump;
-static SymInitializeWProc *             _SymInitializeW;
-static SymInitializeProc *              _SymInitialize;
-static SymCleanupProc *                 _SymCleanup;
-static SymGetOptionsProc *              _SymGetOptions;
-static SymSetOptionsProc *              _SymSetOptions;
-static SymSetSearchPathWProc *          _SymSetSearchPathW;
-static SymSetSearchPathProc *           _SymSetSearchPath;
-static StackWalk64Proc   *              _StackWalk64;
-static SymFunctionTableAccess64Proc *   _SymFunctionTableAccess64;
-static SymGetModuleBase64Proc *         _SymGetModuleBase64;
-static SymFromAddrProc *                _SymFromAddr;
-static SymRefreshModuleListProc *       _SymRefreshModuleList;
-static SymGetLineFromAddr64Proc *       _SymGetLineFromAddr64;
-static BOOL                             gSymInitializeOk = FALSE;
 
 static char *ExceptionNameFromCode(DWORD excCode)
 {
@@ -148,47 +63,11 @@ static char *ExceptionNameFromCode(DWORD excCode)
     return buf;
 }
 
-// It only loads dbghelp.dll and gets its functions.
-// It can (but doesn't have to) be called before Initialize().
-bool Load()
-{
-    if (_MiniDumpWriteDump)
-        return true;
-#if 0
-    WCHAR *dbghelpPath = L"C:\\Program Files (x86)\\Microsoft Visual Studio 10.0\\Team Tools\\Performance Tools\\dbghelp.dll";
-    HMODULE h = LoadLibrary(dbghelpPath);
-#else
-    HMODULE h = SafeLoadLibrary(L"dbghelp.dll");
-#endif
-
-#define Load(func) _ ## func = (func ## Proc *)GetProcAddress(h, #func)
-    Load(MiniDumpWriteDump);
-    Load(SymInitializeW);
-    Load(SymInitialize);
-    Load(SymCleanup);
-    Load(SymGetOptions);
-    Load(SymSetOptions);
-    Load(SymSetSearchPathW);
-    Load(SymSetSearchPath);
-    Load(StackWalk64);
-    Load(SymFunctionTableAccess64);
-    Load(SymGetModuleBase64);
-    Load(SymFromAddr);
-    Load(SymRefreshModuleList);
-    Load(SymGetLineFromAddr64);
-#undef Load
-
-    bool ok = (nullptr != _StackWalk64);
-    //if (!ok)
-    //    plog("dbghelp::Load(): _StackWalk64 not present in dbghelp.dll");
-    return ok;
-}
-
 #if 0
 static bool SetupSymbolPath()
 {
-    if (!_SymSetSearchPathW && !_SymSetSearchPath) {
-        plog("SetupSymbolPath(): _SymSetSearchPathW and _SymSetSearchPath missing");
+    if (!DynSymSetSearchPathW && !DynSymSetSearchPath) {
+        plog("SetupSymbolPath(): DynSymSetSearchPathW and DynSymSetSearchPath missing");
         return false;
     }
 
@@ -200,27 +79,29 @@ static bool SetupSymbolPath()
 
     BOOL ok = FALSE;
     ScopedMem<WCHAR> tpath(str::conv::FromWStr(path));
-    if (_SymSetSearchPathW) {
-        ok = _SymSetSearchPathW(GetCurrentProcess(), path);
+    if (DynSymSetSearchPathW) {
+        ok = DynSymSetSearchPathW(GetCurrentProcess(), path);
         if (!ok)
-            plog("_SymSetSearchPathW() failed");
+            plog("DynSymSetSearchPathW() failed");
     } else {
         ScopedMem<char> tmp(str::conv::ToAnsi(tpath));
-        ok = SymSetSearchPath(GetCurrentProcess(), tmp);
+        ok = DynSymSetSearchPath(GetCurrentProcess(), tmp);
         if (!ok)
-            plog("_SymSetSearchPath() failed");
+            plog("DynSymSetSearchPath() failed");
     }
 
-    _SymRefreshModuleList(GetCurrentProcess());
+    DynSymRefreshModuleList(GetCurrentProcess());
     return ok;
 }
 #endif
 
+static BOOL gSymInitializeOk = FALSE;
+
 static bool CanStackWalk()
 {
-    bool ok = gSymInitializeOk && _SymCleanup && _SymGetOptions &&
-              _SymSetOptions && _StackWalk64 && _SymFunctionTableAccess64 &&
-              _SymGetModuleBase64 && _SymFromAddr;
+    bool ok = DynSymCleanup && DynSymGetOptions &&
+        DynSymSetOptions && DynStackWalk64 && DynSymFunctionTableAccess64 &&
+        DynSymGetModuleBase64 && DynSymFromAddr;
     //if (!ok)
     //    plog("dbghelp::CanStackWalk(): no");
     return ok;
@@ -238,7 +119,7 @@ __declspec(noinline) bool CanSymbolizeAddress(DWORD64 addr)
     symInfo->MaxNameLen = MAX_SYM_LEN;
 
     DWORD64 symDisp = 0;
-    BOOL ok = _SymFromAddr(GetCurrentProcess(), addr, &symDisp, symInfo);
+    BOOL ok = DynSymFromAddr(GetCurrentProcess(), addr, &symDisp, symInfo);
     return ok && symInfo->Name[0];
 }
 
@@ -262,24 +143,21 @@ bool Initialize(const WCHAR *symPathW, bool force)
 
     bool needsCleanup = gSymInitializeOk;
 
-    if (!Load())
-        return false;
-
-    if (!_SymInitializeW && !_SymInitialize) {
+    if (!DynSymInitializeW && !DynSymInitialize) {
         //plog("dbghelp::Initialize(): SymInitializeW() and SymInitialize() not present in dbghelp.dll");
         return false;
     }
 
     if (needsCleanup)
-        _SymCleanup(GetCurrentProcess());
+        DynSymCleanup(GetCurrentProcess());
 
-    if (_SymInitializeW) {
-        gSymInitializeOk = _SymInitializeW(GetCurrentProcess(), symPathW, TRUE);
+    if (DynSymInitializeW) {
+        gSymInitializeOk = DynSymInitializeW(GetCurrentProcess(), symPathW, TRUE);
     } else {
         // SymInitializeW() is not present on some XP systems
         char symPathA[MAX_PATH];
         if (0 != str::conv::ToCodePageBuf(symPathA, dimof(symPathA), symPathW, CP_ACP))
-            gSymInitializeOk = _SymInitialize(GetCurrentProcess(), symPathA, TRUE);
+            gSymInitializeOk = DynSymInitialize(GetCurrentProcess(), symPathA, TRUE);
     }
 
     if (!gSymInitializeOk) {
@@ -287,10 +165,10 @@ bool Initialize(const WCHAR *symPathW, bool force)
         return false;
     }
 
-    DWORD symOptions = _SymGetOptions();
+    DWORD symOptions = DynSymGetOptions();
     symOptions |= (SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
     symOptions |= SYMOPT_FAIL_CRITICAL_ERRORS; // don't show system msg box on errors
-    _SymSetOptions(symOptions);
+    DynSymSetOptions(symOptions);
 
     //SetupSymbolPath();
     return true;
@@ -298,6 +176,7 @@ bool Initialize(const WCHAR *symPathW, bool force)
 
 static BOOL CALLBACK OpenMiniDumpCallback(void *param, PMINIDUMP_CALLBACK_INPUT input, PMINIDUMP_CALLBACK_OUTPUT output)
 {
+    UNUSED(param);
     if (!input || !output)
         return FALSE;
 
@@ -318,7 +197,7 @@ static BOOL CALLBACK OpenMiniDumpCallback(void *param, PMINIDUMP_CALLBACK_INPUT 
 
 void WriteMiniDump(const WCHAR *crashDumpFilePath, MINIDUMP_EXCEPTION_INFORMATION* mei, bool fullDump)
 {
-    if (!Initialize(nullptr) || !_MiniDumpWriteDump)
+    if (!Initialize(nullptr, false) || !DynMiniDumpWriteDump)
         return;
 
     HANDLE hFile = CreateFile(crashDumpFilePath, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, nullptr);
@@ -330,13 +209,12 @@ void WriteMiniDump(const WCHAR *crashDumpFilePath, MINIDUMP_EXCEPTION_INFORMATIO
         type = (MINIDUMP_TYPE)(type | MiniDumpWithDataSegs | MiniDumpWithHandleData | MiniDumpWithPrivateReadWriteMemory);
     MINIDUMP_CALLBACK_INFORMATION mci = { OpenMiniDumpCallback, nullptr };
 
-    _MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, type, mei, nullptr, &mci);
+    DynMiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, type, mei, nullptr, &mci);
 
     CloseHandle(hFile);
 }
 
-// TODO: should offsetOut be DWORD_PTR for 64-bit compat?
-static bool GetAddrInfo(void *addr, char *module, DWORD moduleLen, DWORD& sectionOut, DWORD& offsetOut)
+static bool GetAddrInfo(void *addr, char *module, DWORD moduleLen, DWORD& sectionOut, DWORD_PTR& offsetOut)
 {
     MEMORY_BASIC_INFORMATION mbi;
     if (0 == VirtualQuery(addr, &mbi, sizeof(mbi)))
@@ -354,10 +232,10 @@ static bool GetAddrInfo(void *addr, char *module, DWORD moduleLen, DWORD& sectio
     PIMAGE_NT_HEADERS pNtHeader = (PIMAGE_NT_HEADERS)((BYTE *)dosHeader + dosHeader->e_lfanew);
     PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(pNtHeader);
 
-    DWORD lAddr = (DWORD)addr - (DWORD)hMod;
+    DWORD_PTR lAddr = (DWORD_PTR)addr - (DWORD_PTR)hMod;
     for (unsigned int i = 0; i < pNtHeader->FileHeader.NumberOfSections; i++) {
-        DWORD startAddr = section->VirtualAddress;
-        DWORD endAddr = startAddr;
+        DWORD_PTR startAddr = section->VirtualAddress;
+        DWORD_PTR endAddr = startAddr;
         if (section->SizeOfRawData > section->Misc.VirtualSize)
             endAddr += section->SizeOfRawData;
         else
@@ -375,11 +253,8 @@ static bool GetAddrInfo(void *addr, char *module, DWORD moduleLen, DWORD& sectio
 
 static void AppendAddress(str::Str<char>& s, DWORD64 addr)
 {
-#ifdef _WIN64
-    s.AppendFmt("%016I64X", addr);
-#else
-    s.AppendFmt("%08X", (DWORD)addr);
-#endif
+    void *p = reinterpret_cast<void*>(addr);
+    s.AppendFmt("%p", p);
 }
 
 static void GetAddressInfo(str::Str<char>& s, DWORD64 addr)
@@ -395,14 +270,15 @@ static void GetAddressInfo(str::Str<char>& s, DWORD64 addr)
 
     DWORD64 symDisp = 0;
     char *symName = nullptr;
-    BOOL ok = _SymFromAddr(GetCurrentProcess(), addr, &symDisp, symInfo);
+    BOOL ok = DynSymFromAddr(GetCurrentProcess(), addr, &symDisp, symInfo);
     if (ok)
         symName = &(symInfo->Name[0]);
 
     char module[MAX_PATH] = { 0 };
-    DWORD section, offset;
+    DWORD section;
+    DWORD_PTR offset;
     if (GetAddrInfo((void*)addr, module, sizeof(module), section, offset)) {
-        str::ToLower(module);
+        str::ToLowerInPlace(module);
         const char *moduleShort = path::GetBaseName(module);
         AppendAddress(s, addr);
         s.AppendFmt(" %02X:", section);
@@ -417,7 +293,7 @@ static void GetAddressInfo(str::Str<char>& s, DWORD64 addr)
         IMAGEHLP_LINE64 line;
         line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
         DWORD disp;
-        if (_SymGetLineFromAddr64(GetCurrentProcess(), addr, &disp, &line)) {
+        if (DynSymGetLineFromAddr64(GetCurrentProcess(), addr, &disp, &line)) {
             s.AppendFmt(" %s+%d", line.FileName, line.LineNumber);
         }
     } else {
@@ -434,9 +310,9 @@ static bool GetStackFrameInfo(str::Str<char>& s, STACKFRAME64 *stackFrame,
 #else
     int machineType = IMAGE_FILE_MACHINE_I386;
 #endif
-    BOOL ok = _StackWalk64(machineType, GetCurrentProcess(), hThread,
-        stackFrame, ctx, nullptr, _SymFunctionTableAccess64,
-        _SymGetModuleBase64, nullptr);
+    BOOL ok = DynStackWalk64(machineType, GetCurrentProcess(), hThread,
+        stackFrame, ctx, nullptr, DynSymFunctionTableAccess64,
+        DynSymGetModuleBase64, nullptr);
     if (!ok)
         return false;
 
@@ -529,19 +405,17 @@ void GetThreadCallstack(str::Str<char>& s, DWORD threadId)
 // from local buffer overrun because optimizations are disabled in function)"
 #pragma warning(push)
 #pragma warning(disable : 4748)
-typedef VOID WINAPI RtlCaptureContextProc(PCONTEXT ContextRecord);
 __declspec(noinline) bool GetCurrentThreadCallstack(str::Str<char>& s)
 {
-    if (!Initialize(nullptr))
+    // not available under Win2000
+    if (!DynRtlCaptureContext)
+        return false;
+
+    if (!Initialize(nullptr, false))
         return false;
 
     CONTEXT ctx;
-    // not available under Win2000
-    RtlCaptureContextProc *MyRtlCaptureContext = (RtlCaptureContextProc *)LoadDllFunc(L"kernel32.dll", "RtlCaptureContext");
-    if (!MyRtlCaptureContext)
-        return false;
-
-    MyRtlCaptureContext(&ctx);
+    DynRtlCaptureContext(&ctx);
     return GetCallstack(s, ctx, GetCurrentThread());
 }
 #pragma optimize("", off )

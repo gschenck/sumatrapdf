@@ -1,10 +1,9 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
 #include "BaseUtil.h"
-#include <dwmapi.h>
-#include <vssym32.h>
+#include "WinDynCalls.h"
 #include "Dpi.h"
 #include "FileUtil.h"
 #include "GdiPlusUtil.h"
@@ -82,9 +81,9 @@ public:
         hwnd(wnd), data(nullptr), width(0), height(0),
         current(-1), highlighted(-1), xClicked(-1), xHighlighted(-1), nextTab(-1),
         isMouseInClientArea(false), isDragging(false), inTitlebar(false), currBgCol(DEFAULT_CURRENT_BG_COL) {
-        Reshape(tabSize.dx, tabSize.dy);
-        EvaluateColors();
         memset(&color, 0, sizeof(color));
+        Reshape(tabSize.dx, tabSize.dy);
+        EvaluateColors(false);
     }
 
     ~TabPainter() {
@@ -305,7 +304,7 @@ public:
     }
 
     // Evaluates the colors for the tab's elements.
-    void EvaluateColors(bool force=false) {
+    void EvaluateColors(bool force) {
         COLORREF bg, txt;
         if (inTitlebar) {
             WindowInfo *win = FindWindowInfoByHwnd(hwnd);
@@ -502,7 +501,7 @@ static LRESULT CALLBACK WndProcTabBar(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
 
             if (!tab->isMouseInClientArea) {
                 // Track the mouse for leaving the client area.
-                TRACKMOUSEEVENT tme;
+                TRACKMOUSEEVENT tme = { 0 };
                 tme.cbSize = sizeof(TRACKMOUSEEVENT);
                 tme.dwFlags = TME_LEAVE;
                 tme.hwndTrack = hwnd;
@@ -609,7 +608,7 @@ static LRESULT CALLBACK WndProcTabBar(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             hdc = wParam ? (HDC)wParam : BeginPaint(hwnd, &ps);
 
             DoubleBuffer buffer(hwnd, RectI::FromRECT(rc));
-            tab->EvaluateColors();
+            tab->EvaluateColors(false);
             tab->Paint(buffer.GetDC(), rc);
             buffer.Flush(hdc);
 
@@ -656,11 +655,19 @@ void CreateTabbar(WindowInfo *win)
 }
 
 // verifies that TabInfo state is consistent with WindowInfo state
-static void VerifyTabInfo(WindowInfo *win, TabInfo *tdata)
+static NO_INLINE void VerifyTabInfo(WindowInfo *win, TabInfo *tdata)
 {
     CrashIf(tdata->ctrl != win->ctrl);
-    CrashIf(!str::Eq(ScopedMem<WCHAR>(win::GetText(win->hwndFrame)), tdata->frameTitle));
-    CrashIf(win->tocVisible != (!win->presentation ? tdata->showToc : PM_ENABLED == win->presentation ? tdata->showTocPresentation : false));
+    ScopedMem<WCHAR> winTitle(win::GetText(win->hwndFrame));
+    CrashIf(!str::Eq(winTitle.Get(), tdata->frameTitle));
+    bool expectedTocVisibility = tdata->showToc; // if not in presentation mode
+    if (PM_DISABLED != win->presentation) {
+        expectedTocVisibility = false; // PM_BLACK_SCREEN, PM_WHITE_SCREEN
+        if (PM_ENABLED == win->presentation) {
+            expectedTocVisibility = tdata->showTocPresentation;
+        }
+    }
+    CrashIf(win->tocVisible != expectedTocVisibility);
     CrashIf(tdata->canvasRc != win->canvasRc);
 }
 
@@ -714,13 +721,15 @@ static void SetTabTitle(WindowInfo *win, TabInfo *tab)
 }
 
 // On load of a new document we insert a new tab item in the tab bar.
-void TabsOnLoadedDoc(WindowInfo *win)
+TabInfo *CreateNewTab(WindowInfo *win, const WCHAR *filePath)
 {
+    CrashIf(!win);
     if (!win)
-        return;
+        return nullptr;
 
-    TabInfo *tab = win->tabs.Last();
-    VerifyTabInfo(win, tab);
+    TabInfo *tab = new TabInfo(filePath);
+    win->tabs.Append(tab);
+    tab->canvasRc = win->canvasRc;
 
     TCITEM tcs;
     tcs.mask = TCIF_TEXT;
@@ -735,6 +744,8 @@ void TabsOnLoadedDoc(WindowInfo *win)
         // TODO: what now?
         CrashIf(true);
     }
+
+    return tab;
 }
 
 // Refresh the tab's title
@@ -862,11 +873,6 @@ void SetTabsInTitlebar(WindowInfo *win, bool set)
 {
     if (set == win->tabsInTitlebar)
         return;
-    if (set) {
-        // make sure to load Dwmapi.dll before WndProcFrame -> CustomCaptionFrameProc ->
-        // dwm::DefWindowProc_ -> dwm::Initialize might produce an infinite loop
-        dwm::Initialize();
-    }
     win->tabsInTitlebar = set;
     TabPainter *tab = (TabPainter *)GetWindowLongPtr(win->hwndTabBar, GWLP_USERDATA);
     tab->inTitlebar = set;
@@ -909,7 +915,7 @@ void TabsSelect(WindowInfo *win, int tabIndex)
 // Selects the next (or previous) tab.
 void TabsOnCtrlTab(WindowInfo *win, bool reverse)
 {
-    size_t count = win->tabs.Count();
+    int count = (int)win->tabs.Count();
     if (count < 2)
         return;
 

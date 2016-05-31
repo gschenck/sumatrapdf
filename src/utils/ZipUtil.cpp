@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 #define __STDC_LIMIT_MACROS
@@ -193,6 +193,7 @@ public:
     }
     // ISequentialStream
     IFACEMETHODIMP Read(void *buffer, ULONG size, ULONG *read) {
+        UNUSED(buffer); UNUSED(size); UNUSED(read);
         return E_NOTIMPL;
     }
     IFACEMETHODIMP Write(const void *data, ULONG size, ULONG *written) {

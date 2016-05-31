@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 namespace EpubEngine {
@@ -32,7 +32,7 @@ BaseEngine *CreateFromFile(const WCHAR *fileName);
 
 }
 
-namespace Chm2Engine {
+namespace ChmEngine {
 
 bool IsSupportedFile(const WCHAR *fileName, bool sniff=false);
 BaseEngine *CreateFromFile(const WCHAR *fileName);

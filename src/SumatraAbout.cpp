@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 // utils
@@ -135,7 +135,19 @@ static void DrawSumatraPDF(HDC hdc, PointI pt)
 #endif
 }
 
-static SizeI CalcSumatraVersionSize(HDC hdc)
+static WCHAR *GetSumatraVersion() {
+    str::Str<WCHAR> s;
+    s.Set(VERSION_TXT);
+    if (IsProcess64()) {
+        s.Append(L" 64-bit");
+    }
+#ifdef DEBUG
+    s.Append(L" (dbg)");
+#endif
+    return s.StealData();
+}
+
+static SizeI CalcSumatraVersionSize(HWND hwnd, HDC hdc)
 {
     SizeI result;
 
@@ -152,9 +164,9 @@ static SizeI CalcSumatraVersionSize(HDC hdc)
 
     /* consider version and version-sub strings */
     SelectObject(hdc, fontVersionTxt);
-    txt = VERSION_TXT;
-    GetTextExtentPoint32(hdc, txt, (int)str::Len(txt), &txtSize);
-    LONG minWidth = txtSize.cx;
+    ScopedMem<WCHAR> ver(GetSumatraVersion());
+    GetTextExtentPoint32(hdc, ver.Get(), (int)str::Len(ver.Get()), &txtSize);
+    LONG minWidth = txtSize.cx + DpiScaleX(hwnd, 8);
     txt = VERSION_SUB_TXT;
     GetTextExtentPoint32(hdc, txt, (int)str::Len(txt), &txtSize);
     txtSize.cx = std::max(txtSize.cx, minWidth);
@@ -181,8 +193,9 @@ static void DrawSumatraVersion(HDC hdc, RectI rect)
     SetTextColor(hdc, WIN_COL_BLACK);
     SelectObject(hdc, fontVersionTxt);
     PointI pt(mainRect.x + mainRect.dx + ABOUT_INNER_PADDING, mainRect.y);
-    txt = VERSION_TXT;
-    TextOut(hdc, pt.x, pt.y, txt, (int)str::Len(txt));
+
+    ScopedMem<WCHAR> ver(GetSumatraVersion());
+    TextOut(hdc, pt.x, pt.y, ver.Get(), (int)str::Len(ver.Get()));
     txt = VERSION_SUB_TXT;
     TextOut(hdc, pt.x, pt.y + 16, txt, (int)str::Len(txt));
 
@@ -192,7 +205,7 @@ static void DrawSumatraVersion(HDC hdc, RectI rect)
 static RectI DrawBottomRightLink(HWND hwnd, HDC hdc, const WCHAR *txt)
 {
     ScopedFont fontLeftTxt(CreateSimpleFont(hdc, L"MS Shell Dlg", 14));
-    ScopedGdiObj<HPEN> penLinkLine(CreatePen(PS_SOLID, 1, COL_BLUE_LINK));
+    ScopedPen penLinkLine(CreatePen(PS_SOLID, 1, COL_BLUE_LINK));
     ScopedHdcSelect font(hdc, fontLeftTxt);
 
     SetTextColor(hdc, COL_BLUE_LINK);
@@ -207,9 +220,10 @@ static RectI DrawBottomRightLink(HWND hwnd, HDC hdc, const WCHAR *txt)
         rect.x = ABOUT_INNER_PADDING;
     RECT rTmp = rect.ToRECT();
     DrawText(hdc, txt, -1, &rTmp, IsUIRightToLeft() ? DT_RTLREADING : DT_LEFT);
-
-    SelectObject(hdc, penLinkLine);
-    PaintLine(hdc, RectI(rect.x, rect.y + rect.dy, rect.dx, 0));
+    {
+        ScopedHdcSelect pen(hdc, penLinkLine);
+        PaintLine(hdc, RectI(rect.x, rect.y + rect.dy, rect.dx, 0));
+    }
 
     // make the click target larger
     rect.Inflate(ABOUT_INNER_PADDING, ABOUT_INNER_PADDING);
@@ -221,14 +235,14 @@ static RectI DrawBottomRightLink(HWND hwnd, HDC hdc, const WCHAR *txt)
    to understand without seeing the design. */
 static void DrawAbout(HWND hwnd, HDC hdc, RectI rect, Vec<StaticLinkInfo>& linkInfo)
 {
-    HPEN penBorder = CreatePen(PS_SOLID, ABOUT_LINE_OUTER_SIZE, WIN_COL_BLACK);
-    HPEN penDivideLine = CreatePen(PS_SOLID, ABOUT_LINE_SEP_SIZE, WIN_COL_BLACK);
-    HPEN penLinkLine = CreatePen(PS_SOLID, ABOUT_LINE_SEP_SIZE, COL_BLUE_LINK);
+    ScopedPen penBorder(CreatePen(PS_SOLID, ABOUT_LINE_OUTER_SIZE, WIN_COL_BLACK));
+    ScopedPen penDivideLine(CreatePen(PS_SOLID, ABOUT_LINE_SEP_SIZE, WIN_COL_BLACK));
+    ScopedPen penLinkLine(CreatePen(PS_SOLID, ABOUT_LINE_SEP_SIZE, COL_BLUE_LINK));
 
     ScopedFont fontLeftTxt(CreateSimpleFont(hdc, LEFT_TXT_FONT, LEFT_TXT_FONT_SIZE));
     ScopedFont fontRightTxt(CreateSimpleFont(hdc, RIGHT_TXT_FONT, RIGHT_TXT_FONT_SIZE));
 
-    HGDIOBJ origFont = SelectObject(hdc, fontLeftTxt); /* Just to remember the orig font */
+    ScopedHdcSelect font(hdc, fontLeftTxt); /* Just to remember the orig font */
 
     ClientRect rc(hwnd);
     RECT rTmp = rc.ToRECT();
@@ -236,11 +250,11 @@ static void DrawAbout(HWND hwnd, HDC hdc, RectI rect, Vec<StaticLinkInfo>& linkI
     FillRect(hdc, &rTmp, brushAboutBg);
 
     /* render title */
-    RectI titleRect(rect.TL(), CalcSumatraVersionSize(hdc));
+    RectI titleRect(rect.TL(), CalcSumatraVersionSize(hwnd, hdc));
 
-    ScopedGdiObj<HBRUSH> bgBrush(CreateSolidBrush(GetLogoBgColor()));
-    SelectObject(hdc, bgBrush);
-    SelectObject(hdc, penBorder);
+    ScopedBrush bgBrush(CreateSolidBrush(GetLogoBgColor()));
+    ScopedHdcSelect brush(hdc, bgBrush);
+    ScopedHdcSelect pen(hdc, penBorder);
 #ifndef ABOUT_USE_LESS_COLORS
     Rectangle(hdc, rect.x, rect.y + ABOUT_LINE_OUTER_SIZE, rect.x + rect.dx, rect.y + titleRect.dy + ABOUT_LINE_OUTER_SIZE);
 #else
@@ -275,12 +289,12 @@ static void DrawAbout(HWND hwnd, HDC hdc, RectI rect, Vec<StaticLinkInfo>& linkI
     for (AboutLayoutInfoEl *el = gAboutLayoutInfo; el->leftTxt; el++) {
         bool hasUrl = HasPermission(Perm_DiskAccess) && el->url;
         SetTextColor(hdc, hasUrl ? COL_BLUE_LINK : ABOUT_BORDER_COL);
-        int txtLen = (int)str::Len(el->rightTxt);
+        size_t txtLen = str::Len(el->rightTxt);
 #ifdef GIT_COMMIT_ID
         if (str::EndsWith(el->rightTxt, GIT_COMMIT_ID_STR))
             txtLen -= str::Len(GIT_COMMIT_ID_STR) - 7;
 #endif
-        TextOut(hdc, el->rightPos.x, el->rightPos.y, el->rightTxt, txtLen);
+        TextOutW(hdc, el->rightPos.x, el->rightPos.y, el->rightTxt, (int)txtLen);
 
         if (hasUrl) {
             int underlineY = el->rightPos.y + el->rightPos.dy - 3;
@@ -293,12 +307,6 @@ static void DrawAbout(HWND hwnd, HDC hdc, RectI rect, Vec<StaticLinkInfo>& linkI
     RectI divideLine(gAboutLayoutInfo[0].rightPos.x - ABOUT_LEFT_RIGHT_SPACE_DX,
                      rect.y + titleRect.dy + 4, 0, rect.y + rect.dy - 4 - gAboutLayoutInfo[0].rightPos.y);
     PaintLine(hdc, divideLine);
-
-    SelectObject(hdc, origFont);
-
-    DeleteObject(penBorder);
-    DeleteObject(penDivideLine);
-    DeleteObject(penLinkLine);
 }
 
 static void UpdateAboutLayoutInfo(HWND hwnd, HDC hdc, RectI *rect)
@@ -309,7 +317,7 @@ static void UpdateAboutLayoutInfo(HWND hwnd, HDC hdc, RectI *rect)
     HGDIOBJ origFont = SelectObject(hdc, fontLeftTxt);
 
     /* calculate minimal top box size */
-    SizeI headerSize = CalcSumatraVersionSize(hdc);
+    SizeI headerSize = CalcSumatraVersionSize(hwnd, hdc);
 
     /* calculate left text dimensions */
     SelectObject(hdc, fontLeftTxt);
@@ -335,12 +343,12 @@ static void UpdateAboutLayoutInfo(HWND hwnd, HDC hdc, RectI *rect)
     int rightDy = 0;
     for (AboutLayoutInfoEl *el = gAboutLayoutInfo; el->leftTxt; el++) {
         SIZE txtSize;
-        int txtLen = (int)str::Len(el->rightTxt);
+        size_t txtLen = str::Len(el->rightTxt);
 #ifdef GIT_COMMIT_ID
         if (str::EndsWith(el->rightTxt, GIT_COMMIT_ID_STR))
             txtLen -= str::Len(GIT_COMMIT_ID_STR) - 7;
 #endif
-        GetTextExtentPoint32(hdc, el->rightTxt, txtLen, &txtSize);
+        GetTextExtentPoint32W(hdc, el->rightTxt, (int)txtLen, &txtSize);
         el->rightPos.dx = txtSize.cx;
         el->rightPos.dy = txtSize.cy;
 
@@ -398,8 +406,10 @@ static void OnPaintAbout(HWND hwnd)
 
 static void CopyAboutInfoToClipboard(HWND hwnd)
 {
+    UNUSED(hwnd);
     str::Str<WCHAR> info(512);
-    info.AppendFmt(L"%s %s\r\n", APP_NAME_STR, VERSION_TXT);
+    ScopedMem<WCHAR> ver(GetSumatraVersion());
+    info.AppendFmt(L"%s %s\r\n", APP_NAME_STR, ver.Get());
     for (size_t i = info.Size() - 2; i > 0; i--) {
         info.Append('-');
     }
@@ -604,27 +614,27 @@ void DrawAboutPage(WindowInfo& win, HDC hdc)
 
 void DrawStartPage(WindowInfo& win, HDC hdc, FileHistory& fileHistory, COLORREF textColor, COLORREF backgroundColor)
 {
-    HPEN penBorder = CreatePen(PS_SOLID, DOCLIST_SEPARATOR_DY, WIN_COL_BLACK);
-    HPEN penThumbBorder = CreatePen(PS_SOLID, DOCLIST_THUMBNAIL_BORDER_W, WIN_COL_BLACK);
-    HPEN penLinkLine = CreatePen(PS_SOLID, 1, COL_BLUE_LINK);
+    ScopedPen penBorder(CreatePen(PS_SOLID, DOCLIST_SEPARATOR_DY, WIN_COL_BLACK));
+    ScopedPen penThumbBorder(CreatePen(PS_SOLID, DOCLIST_THUMBNAIL_BORDER_W, WIN_COL_BLACK));
+    ScopedPen penLinkLine(CreatePen(PS_SOLID, 1, COL_BLUE_LINK));
 
     ScopedFont fontSumatraTxt(CreateSimpleFont(hdc, L"MS Shell Dlg", 24));
     ScopedFont fontLeftTxt(CreateSimpleFont(hdc, L"MS Shell Dlg", 14));
 
-    HGDIOBJ origFont = SelectObject(hdc, fontSumatraTxt); /* Just to remember the orig font */
+    ScopedHdcSelect font(hdc, fontSumatraTxt);
 
     ClientRect rc(win.hwndCanvas);
     RECT rTmp = rc.ToRECT();
-    ScopedGdiObj<HBRUSH> brushLogoBg(CreateSolidBrush(GetLogoBgColor()));
+    ScopedBrush brushLogoBg(CreateSolidBrush(GetLogoBgColor()));
     FillRect(hdc, &rTmp, brushLogoBg);
 
-    SelectObject(hdc, brushLogoBg);
-    SelectObject(hdc, penBorder);
+    ScopedHdcSelect brush(hdc, brushLogoBg);
+    ScopedHdcSelect pen(hdc, penBorder);
 
     bool isRtl = IsUIRightToLeft();
 
     /* render title */
-    RectI titleBox = RectI(PointI(0, 0), CalcSumatraVersionSize(hdc));
+    RectI titleBox = RectI(PointI(0, 0), CalcSumatraVersionSize(win.hwndCanvas, hdc));
     titleBox.x = rc.dx - titleBox.dx - 3;
     DrawSumatraVersion(hdc, titleBox);
     PaintLine(hdc, RectI(0, titleBox.dy, rc.dx, 0));
@@ -752,10 +762,4 @@ void DrawStartPage(WindowInfo& win, HDC hdc, FileHistory& fileHistory, COLORREF 
 
     rect = DrawBottomRightLink(win.hwndCanvas, hdc, _TR("Hide frequently read"));
     win.staticLinks.Append(StaticLinkInfo(rect, SLINK_LIST_HIDE));
-
-    SelectObject(hdc, origFont);
-
-    DeleteObject(penBorder);
-    DeleteObject(penThumbBorder);
-    DeleteObject(penLinkLine);
 }

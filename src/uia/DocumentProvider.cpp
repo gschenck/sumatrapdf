@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 #include "BaseUtil.h"
@@ -170,7 +170,7 @@ HRESULT STDMETHODCALLTYPE SumatraUIAutomationDocumentProvider::GetRuntimeId(SAFE
         return E_OUTOFMEMORY;
 
     // RuntimeID magic, use hwnd to differentiate providers of different windows
-    int rId[] = { (int)canvasHwnd, SUMATRA_UIA_DOCUMENT_RUNTIME_ID };
+    LONG rId[] = { (LONG)canvasHwnd, SUMATRA_UIA_DOCUMENT_RUNTIME_ID };
     for (LONG i = 0; i < 2; i++) {
         HRESULT hr = SafeArrayPutElement(psa, &i, (void*)&(rId[i]));
         CrashIf(FAILED(hr));
@@ -358,6 +358,7 @@ HRESULT STDMETHODCALLTYPE SumatraUIAutomationDocumentProvider::RangeFromChild(IR
 
 HRESULT STDMETHODCALLTYPE SumatraUIAutomationDocumentProvider::RangeFromPoint(struct UiaPoint point, ITextRangeProvider **pRetVal)
 {
+    UNUSED(point); UNUSED(pRetVal);
     // TODO: Is this even used? We wont support editing either way
     // so there won't be even a caret visible. Hence empty ranges are useless?
     return E_NOTIMPL;

@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 #define CANVAS_CLASS_NAME       L"SUMATRA_PDF_CANVAS"
@@ -90,6 +90,7 @@ enum MenuToolbarFlags {
 // for backward compatibility use a value that older versions will render as yellow
 #define ABOUT_BG_COLOR_DEFAULT  (RGB(0xff, 0xf2, 0) - 0x80000000)
 
+class Controller;
 class Favorites;
 class FileHistory;
 class WindowInfo;
@@ -102,7 +103,6 @@ struct SessionData;
 // all defined in SumatraPDF.cpp
 extern bool                     gDebugShowLinks;
 extern bool                     gShowFrameRate;
-extern bool                     gUseGdiRenderer;
 
 extern const WCHAR *            gPluginURL;
 extern Vec<WindowInfo*>         gWindows;
@@ -150,6 +150,7 @@ WindowInfo* FindWindowInfoByHwnd(HWND hwnd);
 WindowInfo* FindWindowInfoByFile(const WCHAR *file, bool focusTab);
 WindowInfo* FindWindowInfoBySyncFile(const WCHAR *file, bool focusTab);
 WindowInfo* FindWindowInfoByTab(TabInfo *tab);
+WindowInfo* FindWindowInfoByController(Controller *ctrl);
 
 // LoadDocument carries a lot of state, this holds them in
 // one place
@@ -157,7 +158,7 @@ struct LoadArgs
 {
     explicit LoadArgs(const WCHAR *fileName, WindowInfo *win=nullptr) :
         fileName(fileName), win(win), showWin(true), forceReuse(false),
-        isNewWindow(false), allowFailure(true), placeWindow(true) { }
+        isNewWindow(false), placeWindow(true) { }
 
     const WCHAR *fileName;
     WindowInfo *win;
@@ -165,7 +166,6 @@ struct LoadArgs
     bool forceReuse;
     // for internal use
     bool isNewWindow;
-    bool allowFailure;
     bool placeWindow;
 };
 

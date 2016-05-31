@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 int GetTabbarHeight(HWND, float factor=1.f);
@@ -7,7 +7,7 @@ void SaveCurrentTabInfo(WindowInfo *win);
 void LoadModelIntoTab(WindowInfo *win, TabInfo *tdata);
 
 void CreateTabbar(WindowInfo *win);
-void TabsOnLoadedDoc(WindowInfo *win);
+TabInfo *CreateNewTab(WindowInfo *win, const WCHAR *filePath);
 void TabsOnCloseDoc(WindowInfo *win);
 void TabsOnCloseWindow(WindowInfo *win);
 void TabsOnChangedDoc(WindowInfo *win);

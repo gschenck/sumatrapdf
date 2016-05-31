@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 struct SelectionOnPage;
@@ -32,7 +32,7 @@ public:
     float prevZoomVirtual;
     DisplayMode prevDisplayMode;
 
-    TabInfo();
+    TabInfo(const WCHAR *filePath=nullptr);
     ~TabInfo();
 
     DisplayModel *AsFixed() const { return ctrl ? ctrl->AsFixed() : nullptr; }

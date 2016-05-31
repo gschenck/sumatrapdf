@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 // utils
@@ -741,6 +741,10 @@ void HtmlFormatter::EmitTextRun(const char *s, const char *end)
             currReparseIdx = s - htmlParser->Start();
 
         size_t strLen = str::Utf8ToWcharBuf(s, end - s, buf, dimof(buf));
+        // soft hyphens should not be displayed
+        strLen -= str::RemoveChars(buf, L"\xad");
+        if (0 == strLen)
+            break;
         textMeasure->SetFont(CurrFont());
         RectF bbox = textMeasure->Measure(buf, strLen);
         EnsureDx(bbox.Width);
@@ -1374,6 +1378,8 @@ void DrawHtmlPage(Graphics *g, mui::ITextRender *textDraw, Vec<DrawInstr> *drawI
         bbox.Y += offY;
         if (InstrString == i.type || InstrRtlString == i.type) {
             size_t strLen = str::Utf8ToWcharBuf(i.str.s, i.str.len, buf, dimof(buf));
+            // soft hyphens should not be displayed
+            strLen -= str::RemoveChars(buf, L"\xad");
             textDraw->Draw(buf, strLen, bbox, InstrRtlString == i.type);
         } else if (InstrSetFont == i.type) {
             textDraw->SetFont(i.font);

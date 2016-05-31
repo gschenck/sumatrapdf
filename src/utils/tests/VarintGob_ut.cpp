@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 #include "BaseUtil.h"
@@ -25,6 +25,8 @@ static void GenPythonIntTest(int64_t val, uint8_t *d, int dLen)
             s.Append(" + ");
     }
     plogf("%s", s.Get());
+#else
+    UNUSED(val); UNUSED(d); UNUSED(dLen);
 #endif
 }
 
@@ -41,6 +43,8 @@ static void GenPythonUIntTest(uint64_t val, uint8_t *d, int dLen)
             s.Append(" + ");
     }
     plogf("%s", s.Get());
+#else
+    UNUSED(val); UNUSED(d); UNUSED(dLen);
 #endif
 }
 
@@ -75,7 +79,7 @@ static void GobEncodingTest()
         dLen -= n;
         utassert(dLen > 0);
     }
-    dLen = (d - buf);
+    dLen = (int)(d - buf);
     d = buf;
     for (int i = 0; i < dimof(intVals); i++) {
         expVal = intVals[i];
@@ -100,7 +104,7 @@ static void GobEncodingTest()
         dLen -= n;
         utassert(dLen > 0);
     }
-    dLen = (d - buf);
+    dLen = (int)(d - buf);
     d = buf;
     for (int i = 0; i < dimof(uintVals); i++) {
         expUval = uintVals[i];

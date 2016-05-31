@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 /*
@@ -17,8 +17,7 @@ To write new regression test:
 
 // utils
 #include "BaseUtil.h"
-#include <dbghelp.h>
-#include <tlhelp32.h>
+#include "WinDynCalls.h"
 #include "ArchUtil.h"
 #include "DbgHelpDyn.h"
 #include "DirIter.h"
@@ -92,17 +91,13 @@ static LPTOP_LEVEL_EXCEPTION_FILTER gPrevExceptionFilter = nullptr;
 
 static DWORD WINAPI CrashDumpThread(LPVOID data)
 {
+    UNUSED(data);
     WaitForSingleObject(gDumpEvent, INFINITE);
     if (!gCrashed)
         return 0;
 
     printflush("Captain, we've got a crash!\n");
-    if (!dbghelp::Load()) {
-        printflush("CrashDumpThread(): dbghelp::Load() failed");
-        return 0;
-    }
-
-    if (!dbghelp::Initialize(L"")) {
+    if (!dbghelp::Initialize(L"", false)) {
         printflush("CrashDumpThread(): dbghelp::Initialize() failed");
         return 0;
     }

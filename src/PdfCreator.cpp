@@ -1,8 +1,7 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
-// interaction between '_setjmp' and C++ object destruction is non-portable
-#pragma warning(disable: 4611)
+#pragma warning(disable: 4611) // interaction between '_setjmp' and C++ object destruction is non-portable
 
 extern "C" {
 #include <mupdf/pdf.h>

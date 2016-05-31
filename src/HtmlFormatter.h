@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: Simplified BSD (see COPYING.BSD) */
 
 using namespace Gdiplus;
@@ -154,9 +154,9 @@ protected:
     void HandleText(HtmlToken *t);
     void HandleText(const char *s, size_t sLen);
     // blank convenience methods to override
-    virtual void HandleTagImg(HtmlToken *t) { }
-    virtual void HandleTagPagebreak(HtmlToken *t) { }
-    virtual void HandleTagLink(HtmlToken *t) { }
+    virtual void HandleTagImg(HtmlToken *t) { UNUSED(t); }
+    virtual void HandleTagPagebreak(HtmlToken *t) { UNUSED(t); }
+    virtual void HandleTagLink(HtmlToken *t) { UNUSED(t);  }
 
     float CurrLineDx();
     float CurrLineDy();

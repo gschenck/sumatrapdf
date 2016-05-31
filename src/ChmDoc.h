@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 class ChmDoc {
@@ -15,6 +15,7 @@ class ChmDoc {
     void ParseWindowsData();
     bool ParseSystemData();
     bool ParseTocOrIndex(EbookTocVisitor *visitor, const char *path, bool isIndex);
+    void FixPathCodepage(ScopedMem<char>& path, UINT& fileCP);
 
     bool Load(const WCHAR *fileName);
 

@@ -91,6 +91,13 @@ typedef unsigned __int64 uint64_t;
 #pragma warning( disable: 4701 ) /* Potentially uninitialized local variable 'name' used */
 #pragma warning( disable: 4996 ) /* 'function': was declared deprecated */
 
+/* SumatraPDF: disable remaining warnings at warning level 4 */
+#pragma warning( disable: 4100 ) /* unreferenced formal parameter */
+#pragma warning( disable: 4127 ) /* conditional expression is constant */
+#pragma warning( disable: 4703 ) /* potentially uninitialized local variable (VS2012+) */
+#pragma warning( disable: 4456 ) /* declaration of '*' hides previous local declaration (VS2015+) */
+#pragma warning( disable: 4459 ) /* declaration of '*' hides global declaration (VS2015+) */
+
 #include <io.h>
 
 struct timeval;
@@ -373,11 +380,8 @@ static inline float my_atan2f(float o, float a)
 
 int fz_strcasecmp(const char *a, const char *b);
 
-/* SumatraPDF: basic global synchronizing */
-#ifdef _WIN32
-void fz_synchronize_begin();
-void fz_synchronize_end();
 /* SumatraPDF: better support for libmupdf.dll */
+#ifdef _WIN32
 void fz_redirect_io_to_console();
 #endif
 

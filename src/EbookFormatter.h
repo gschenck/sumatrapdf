@@ -1,4 +1,4 @@
-/* Copyright 2014 the SumatraPDF project authors (see AUTHORS file).
+/* Copyright 2015 the SumatraPDF project authors (see AUTHORS file).
    License: GPLv3 */
 
 /* formatting extensions for Mobi */
@@ -80,7 +80,7 @@ public:
 
 class TxtFormatter : public HtmlFormatter {
 protected:
-    virtual void HandleTagPagebreak(HtmlToken *t) { ForceNewPage(); }
+    virtual void HandleTagPagebreak(HtmlToken *t) { UNUSED(t);  ForceNewPage(); }
 
 public:
     explicit TxtFormatter(HtmlFormatterArgs *args) : HtmlFormatter(args) { }
